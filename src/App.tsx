@@ -1,0 +1,97 @@
+import { useState } from 'react';
+import { AuthProvider, useAuth } from './contexts/AuthContext';
+import { Login } from './components/auth/Login';
+import { Register } from './components/auth/Register';
+import { EmployeeDashboard } from './components/employee/EmployeeDashboard';
+import { CreateReport } from './components/employee/CreateReport';
+import { Leaderboard } from './components/employee/Leaderboard';
+import { AdminDashboard } from './components/admin/AdminDashboard';
+import { ReportDetail } from './components/admin/ReportDetail';
+import { SafetyReport } from './types';
+
+type View = 'dashboard' | 'create-report' | 'leaderboard' | 'report-detail';
+
+function AppContent() {
+  const { user, profile, role, loading } = useAuth();
+  const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
+  const [currentView, setCurrentView] = useState<View>('dashboard');
+  const [selectedReport, setSelectedReport] = useState<SafetyReport | null>(null);
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gray-100 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-16 w-16 border-b-4 border-blue-600 mx-auto"></div>
+          <p className="mt-4 text-gray-600 text-lg">جاري التحميل...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!user || !profile) {
+    return authMode === 'login' ? (
+      <Login onToggleMode={() => setAuthMode('register')} />
+    ) : (
+      <Register onToggleMode={() => setAuthMode('login')} />
+    );
+  }
+
+  if (role === 'admin') {
+    if (currentView === 'report-detail' && selectedReport) {
+      return (
+        <ReportDetail
+          report={selectedReport}
+          onBack={() => {
+            setCurrentView('dashboard');
+            setSelectedReport(null);
+          }}
+          onUpdate={() => {
+            setCurrentView('dashboard');
+            setSelectedReport(null);
+          }}
+        />
+      );
+    }
+
+    return (
+      <AdminDashboard
+        onViewReport={(report) => {
+          setSelectedReport(report);
+          setCurrentView('report-detail');
+        }}
+      />
+    );
+  }
+
+  switch (currentView) {
+    case 'create-report':
+      return (
+        <CreateReport
+          onBack={() => setCurrentView('dashboard')}
+        />
+      );
+    case 'leaderboard':
+      return (
+        <Leaderboard
+          onBack={() => setCurrentView('dashboard')}
+        />
+      );
+    default:
+      return (
+        <EmployeeDashboard
+          onCreateReport={() => setCurrentView('create-report')}
+          onViewLeaderboard={() => setCurrentView('leaderboard')}
+        />
+      );
+  }
+}
+
+function App() {
+  return (
+    <AuthProvider>
+      <AppContent />
+    </AuthProvider>
+  );
+}
+
+export default App;
