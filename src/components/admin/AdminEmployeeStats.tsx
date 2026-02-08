@@ -16,7 +16,6 @@ interface EmployeeProfile {
   full_name: string;
   email: string;
   department: string | null;
-  points: number;
 }
 
 interface Report {
@@ -37,6 +36,7 @@ interface EmployeeData {
   pending: number;
   inProgress: number;
   closed: number;
+  totalPoints: number;
 }
 
 type SortKey = 'name' | 'total' | 'points' | 'pending';
@@ -55,18 +55,26 @@ export function AdminEmployeeStats({ onViewReport }: { onViewReport: (report: Sa
   }, []);
 
   const loadData = async () => {
-    const [profilesRes, reportsRes] = await Promise.all([
-      supabase.from('profiles').select('*').eq('role', 'employee'),
+    const [profilesRes, reportsRes, monthlyPointsRes] = await Promise.all([
+      supabase.from('profiles').select('id, full_name, email, department').eq('role', 'employee'),
       supabase
         .from('safety_reports')
         .select('*')
         .order('created_at', { ascending: false }),
+      supabase.from('monthly_employee_points').select('employee_id, total_points'),
     ]);
 
     const profiles = (profilesRes.data || []) as EmployeeProfile[];
     const allReports = (reportsRes.data || []) as Report[];
+    const monthlyPoints = monthlyPointsRes.data || [];
 
     setReports(allReports);
+
+    const pointsMap = new Map<string, number>();
+    monthlyPoints.forEach((mp) => {
+      const current = pointsMap.get(mp.employee_id) || 0;
+      pointsMap.set(mp.employee_id, current + (mp.total_points || 0));
+    });
 
     const employeeMap = new Map<string, EmployeeData>();
     profiles.forEach((p) => {
@@ -76,6 +84,7 @@ export function AdminEmployeeStats({ onViewReport }: { onViewReport: (report: Sa
         pending: 0,
         inProgress: 0,
         closed: 0,
+        totalPoints: pointsMap.get(p.id) || 0,
       });
     });
 
@@ -116,7 +125,7 @@ export function AdminEmployeeStats({ onViewReport }: { onViewReport: (report: Sa
           diff = a.reports.length - b.reports.length;
           break;
         case 'points':
-          diff = a.profile.points - b.profile.points;
+          diff = a.totalPoints - b.totalPoints;
           break;
         case 'pending':
           diff = a.pending - b.pending;
@@ -147,7 +156,7 @@ export function AdminEmployeeStats({ onViewReport }: { onViewReport: (report: Sa
         pending: e.pending,
         inProgress: e.inProgress,
         closed: e.closed,
-        points: e.profile.points,
+        points: e.totalPoints,
       }))
     );
   };
@@ -375,7 +384,7 @@ function EmployeeRow({
           </div>
         </td>
         <td className="px-5 py-4">
-          <span className="text-sm font-bold text-teal-700">{data.profile.points}</span>
+          <span className="text-sm font-bold text-teal-700">{data.totalPoints}</span>
         </td>
         <td className="px-5 py-4">
           {expanded ? (
