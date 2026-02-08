@@ -2,7 +2,7 @@ export type UserRole = 'employee' | 'admin';
 
 export type ReportType = 'unsafe_act' | 'unsafe_condition' | 'near_miss' | 'observation';
 
-export type ReportStatus = 'pending' | 'in_review' | 'action_taken' | 'closed';
+export type ReportStatus = 'pending' | 'in_progress' | 'closed';
 
 export interface Profile {
   id: string;
@@ -113,8 +113,7 @@ export const REPORT_TYPE_LABELS: Record<ReportType, string> = {
 
 export const REPORT_STATUS_LABELS: Record<ReportStatus, string> = {
   pending: 'قيد الانتظار',
-  in_review: 'قيد المراجعة',
-  action_taken: 'تم اتخاذ إجراء',
+  in_progress: 'جاري العمل عليها',
   closed: 'مغلق',
 };
 

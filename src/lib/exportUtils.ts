@@ -37,16 +37,8 @@ function downloadCsv(content: string, filename: string) {
 
 export function exportReportsCsv(reports: ReportRow[], filename?: string) {
   const headers = [
-    'رقم البلاغ',
-    'النوع',
-    'الوصف',
-    'الموقع',
-    'الحالة',
-    'اسم الموظف',
-    'البريد الإلكتروني',
-    'القسم',
-    'النقاط',
-    'تاريخ الإنشاء',
+    'رقم البلاغ', 'النوع', 'الوصف', 'الموقع', 'الحالة',
+    'اسم الموظف', 'البريد الإلكتروني', 'القسم', 'النقاط', 'تاريخ الإنشاء',
   ];
 
   const rows = reports.map((r) => [
@@ -74,35 +66,21 @@ interface EmployeeStatRow {
   department: string;
   totalReports: number;
   pending: number;
-  inReview: number;
-  actionTaken: number;
+  inProgress: number;
   closed: number;
   points: number;
 }
 
 export function exportEmployeeStatsCsv(employees: EmployeeStatRow[]) {
   const headers = [
-    'اسم الموظف',
-    'البريد الإلكتروني',
-    'القسم',
-    'إجمالي البلاغات',
-    'قيد الانتظار',
-    'قيد المراجعة',
-    'تم اتخاذ إجراء',
-    'مغلق',
-    'النقاط',
+    'اسم الموظف', 'البريد الإلكتروني', 'القسم',
+    'إجمالي البلاغات', 'قيد الانتظار', 'جاري العمل عليها', 'مغلق', 'النقاط',
   ];
 
   const rows = employees.map((e) => [
-    e.name,
-    e.email,
-    e.department,
-    String(e.totalReports),
-    String(e.pending),
-    String(e.inReview),
-    String(e.actionTaken),
-    String(e.closed),
-    String(e.points),
+    e.name, e.email, e.department,
+    String(e.totalReports), String(e.pending),
+    String(e.inProgress), String(e.closed), String(e.points),
   ]);
 
   const csv = buildCsv(headers, rows);
@@ -119,28 +97,19 @@ interface MonthlyRow {
 
 export function exportMonthlyCsv(months: MonthlyRow[]) {
   const headers = [
-    'الشهر',
-    'الإجمالي',
-    'سلوك غير آمن',
-    'وضع غير آمن',
-    'حادث كاد أن يقع',
-    'ملاحظة عامة',
-    'قيد الانتظار',
-    'قيد المراجعة',
-    'تم اتخاذ إجراء',
-    'مغلق',
+    'الشهر', 'الإجمالي',
+    'سلوك غير آمن', 'وضع غير آمن', 'حادث كاد أن يقع', 'ملاحظة عامة',
+    'قيد الانتظار', 'جاري العمل عليها', 'مغلق',
   ];
 
   const rows = months.map((m) => [
-    m.month,
-    String(m.total),
+    m.month, String(m.total),
     String(m.byType['unsafe_act'] || 0),
     String(m.byType['unsafe_condition'] || 0),
     String(m.byType['near_miss'] || 0),
     String(m.byType['observation'] || 0),
     String(m.byStatus['pending'] || 0),
-    String(m.byStatus['in_review'] || 0),
-    String(m.byStatus['action_taken'] || 0),
+    String(m.byStatus['in_progress'] || 0),
     String(m.byStatus['closed'] || 0),
   ]);
 

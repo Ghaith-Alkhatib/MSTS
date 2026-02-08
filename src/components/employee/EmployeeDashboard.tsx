@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react';
-import { LogOut, Plus, Trophy, AlertCircle, CheckCircle, Clock, FileText } from 'lucide-react';
+import { LogOut, Plus, Trophy, Clock, CheckCircle, Loader2, FileText, Eye } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { supabase } from '../../lib/supabase';
 import { offlineSync } from '../../lib/offlineSync';
 import { NotificationBell } from '../shared/NotificationBell';
+import { STATUS_LABELS, STATUS_DOT_COLORS, TYPE_LABELS } from '../../lib/adminHelpers';
 
 interface Report {
   id: string;
@@ -15,17 +16,18 @@ interface Report {
   points_awarded: number;
 }
 
-export function EmployeeDashboard({ onCreateReport, onViewLeaderboard }: {
+export function EmployeeDashboard({ onCreateReport, onViewLeaderboard, onViewReport }: {
   onCreateReport: () => void;
   onViewLeaderboard: () => void;
+  onViewReport: (reportId: string) => void;
 }) {
   const { user, profile, signOut } = useAuth();
   const [reports, setReports] = useState<Report[]>([]);
   const [stats, setStats] = useState({
-    totalReports: 0,
     monthReports: 0,
     totalPoints: 0,
     pendingReports: 0,
+    closedReports: 0,
   });
   const [isLoading, setIsLoading] = useState(true);
   const [pendingSync, setPendingSync] = useState(0);
@@ -60,10 +62,10 @@ export function EmployeeDashboard({ onCreateReport, onViewLeaderboard }: {
 
       setReports(reportsData || []);
       setStats({
-        totalReports: reportsData?.length || 0,
         monthReports: reportsData?.length || 0,
         totalPoints: monthPoints,
         pendingReports: reportsData?.filter(r => r.status === 'pending').length || 0,
+        closedReports: reportsData?.filter(r => r.status === 'closed').length || 0,
       });
     } catch (error) {
       console.error('Error loading dashboard:', error);
@@ -76,44 +78,12 @@ export function EmployeeDashboard({ onCreateReport, onViewLeaderboard }: {
     switch (status) {
       case 'pending':
         return <Clock className="w-5 h-5 text-yellow-500" />;
-      case 'in_review':
-        return <AlertCircle className="w-5 h-5 text-blue-500" />;
-      case 'action_taken':
-        return <CheckCircle className="w-5 h-5 text-green-500" />;
+      case 'in_progress':
+        return <Loader2 className="w-5 h-5 text-blue-500" />;
       case 'closed':
         return <CheckCircle className="w-5 h-5 text-gray-500" />;
       default:
         return <FileText className="w-5 h-5 text-gray-500" />;
-    }
-  };
-
-  const getStatusText = (status: string) => {
-    switch (status) {
-      case 'pending':
-        return 'قيد الانتظار';
-      case 'in_review':
-        return 'قيد المراجعة';
-      case 'action_taken':
-        return 'تم اتخاذ إجراء';
-      case 'closed':
-        return 'مغلق';
-      default:
-        return status;
-    }
-  };
-
-  const getReportTypeText = (type: string) => {
-    switch (type) {
-      case 'unsafe_act':
-        return 'سلوك غير آمن';
-      case 'unsafe_condition':
-        return 'وضع غير آمن';
-      case 'near_miss':
-        return 'حادث كاد أن يقع';
-      case 'observation':
-        return 'ملاحظة عامة';
-      default:
-        return type;
     }
   };
 
@@ -145,7 +115,7 @@ export function EmployeeDashboard({ onCreateReport, onViewLeaderboard }: {
               </div>
             </div>
             <div className="flex items-center gap-2">
-              <NotificationBell />
+              <NotificationBell onNavigateToReport={onViewReport} />
               <button
                 onClick={signOut}
                 className="flex items-center gap-2 px-4 py-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
@@ -195,10 +165,10 @@ export function EmployeeDashboard({ onCreateReport, onViewLeaderboard }: {
           <div className="bg-white rounded-xl shadow-sm p-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-gray-600">قيد المراجعة</p>
+                <p className="text-sm text-gray-600">قيد الانتظار</p>
                 <p className="text-3xl font-bold text-gray-900 mt-1">{stats.pendingReports}</p>
               </div>
-              <AlertCircle className="w-10 h-10 text-yellow-500" />
+              <Clock className="w-10 h-10 text-yellow-500" />
             </div>
           </div>
 
@@ -206,9 +176,7 @@ export function EmployeeDashboard({ onCreateReport, onViewLeaderboard }: {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-gray-600">مغلقة</p>
-                <p className="text-3xl font-bold text-gray-900 mt-1">
-                  {reports.filter(r => r.status === 'closed').length}
-                </p>
+                <p className="text-3xl font-bold text-gray-900 mt-1">{stats.closedReports}</p>
               </div>
               <CheckCircle className="w-10 h-10 text-green-500" />
             </div>
@@ -250,10 +218,11 @@ export function EmployeeDashboard({ onCreateReport, onViewLeaderboard }: {
             </div>
           ) : (
             <div className="space-y-4">
-              {reports.slice(0, 5).map((report) => (
+              {reports.slice(0, 10).map((report) => (
                 <div
                   key={report.id}
-                  className="border border-gray-200 rounded-lg p-4 hover:border-blue-300 transition-colors"
+                  onClick={() => onViewReport(report.id)}
+                  className="border border-gray-200 rounded-lg p-4 hover:border-blue-300 hover:shadow-sm transition-all cursor-pointer group"
                 >
                   <div className="flex items-start justify-between">
                     <div className="flex-1">
@@ -262,7 +231,7 @@ export function EmployeeDashboard({ onCreateReport, onViewLeaderboard }: {
                           {report.report_number}
                         </span>
                         <span className="text-sm text-gray-600">
-                          {getReportTypeText(report.report_type)}
+                          {TYPE_LABELS[report.report_type] || report.report_type}
                         </span>
                       </div>
                       <p className="text-gray-700 text-sm line-clamp-2">{report.description}</p>
@@ -274,11 +243,15 @@ export function EmployeeDashboard({ onCreateReport, onViewLeaderboard }: {
                         })}
                       </p>
                     </div>
-                    <div className="flex items-center gap-2 mr-4">
-                      {getStatusIcon(report.status)}
-                      <span className="text-sm font-medium text-gray-700">
-                        {getStatusText(report.status)}
+                    <div className="flex items-center gap-3 mr-4">
+                      <span className="flex items-center gap-1.5">
+                        <span className={`w-2 h-2 rounded-full ${STATUS_DOT_COLORS[report.status]}`} />
+                        {getStatusIcon(report.status)}
+                        <span className="text-sm font-medium text-gray-700">
+                          {STATUS_LABELS[report.status] || report.status}
+                        </span>
                       </span>
+                      <Eye className="w-4 h-4 text-gray-300 group-hover:text-blue-500 transition-colors" />
                     </div>
                   </div>
                 </div>

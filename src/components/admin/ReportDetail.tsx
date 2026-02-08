@@ -401,8 +401,7 @@ export function ReportDetail({ report, onBack, onUpdate }: {
                   className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 >
                   <option value="pending">قيد الانتظار</option>
-                  <option value="in_review">قيد المراجعة</option>
-                  <option value="action_taken">تم اتخاذ إجراء</option>
+                  <option value="in_progress">جاري العمل عليها</option>
                   <option value="closed">مغلق</option>
                 </select>
               </div>

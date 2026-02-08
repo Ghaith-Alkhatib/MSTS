@@ -1,7 +1,6 @@
 export const STATUS_LABELS: Record<string, string> = {
   pending: 'قيد الانتظار',
-  in_review: 'قيد المراجعة',
-  action_taken: 'تم اتخاذ إجراء',
+  in_progress: 'جاري العمل عليها',
   closed: 'مغلق',
 };
 
@@ -14,8 +13,7 @@ export const TYPE_LABELS: Record<string, string> = {
 
 export const STATUS_COLORS: Record<string, string> = {
   pending: 'bg-yellow-100 text-yellow-800 border-yellow-300',
-  in_review: 'bg-blue-100 text-blue-800 border-blue-300',
-  action_taken: 'bg-green-100 text-green-800 border-green-300',
+  in_progress: 'bg-blue-100 text-blue-800 border-blue-300',
   closed: 'bg-gray-100 text-gray-800 border-gray-300',
 };
 
@@ -28,8 +26,7 @@ export const TYPE_COLORS: Record<string, string> = {
 
 export const STATUS_DOT_COLORS: Record<string, string> = {
   pending: 'bg-yellow-500',
-  in_review: 'bg-blue-500',
-  action_taken: 'bg-green-500',
+  in_progress: 'bg-blue-500',
   closed: 'bg-gray-400',
 };
 

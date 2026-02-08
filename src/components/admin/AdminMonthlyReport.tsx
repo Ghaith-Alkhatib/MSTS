@@ -4,6 +4,7 @@ import {
   Eye,
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
+import { SafetyReport } from '../../types';
 import {
   STATUS_LABELS, TYPE_LABELS, STATUS_DOT_COLORS,
   TYPE_BAR_COLORS, MONTH_NAMES_AR, formatDateTimeAr,
@@ -33,7 +34,7 @@ interface MonthData {
   uniqueEmployees: number;
 }
 
-export function AdminMonthlyReport() {
+export function AdminMonthlyReport({ onViewReport }: { onViewReport: (report: SafetyReport) => void }) {
   const [reports, setReports] = useState<Report[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
@@ -117,7 +118,7 @@ export function AdminMonthlyReport() {
     const md = monthlyData.find((m) => m.month === detailView.month);
     if (!md) return [];
     if (detailView.type === 'all') return md.reports;
-    if (['pending', 'in_review', 'action_taken', 'closed'].includes(detailView.type)) {
+    if (['pending', 'in_progress', 'closed'].includes(detailView.type)) {
       return md.reports.filter((r) => r.status === detailView.type);
     }
     return md.reports.filter((r) => r.report_type === detailView.type);
@@ -173,11 +174,16 @@ export function AdminMonthlyReport() {
                   <th className="text-right px-4 py-3 text-xs font-semibold text-gray-600">الموقع</th>
                   <th className="text-right px-4 py-3 text-xs font-semibold text-gray-600">الحالة</th>
                   <th className="text-right px-4 py-3 text-xs font-semibold text-gray-600">التاريخ</th>
+                  <th className="text-right px-4 py-3 text-xs font-semibold text-gray-600"></th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
                 {detailReports.map((r) => (
-                  <tr key={r.id} className="hover:bg-gray-50">
+                  <tr
+                    key={r.id}
+                    className="hover:bg-gray-50 cursor-pointer"
+                    onClick={() => onViewReport(r as unknown as SafetyReport)}
+                  >
                     <td className="px-4 py-3 font-mono text-xs">{r.report_number}</td>
                     <td className="px-4 py-3">{r.employee?.full_name || '-'}</td>
                     <td className="px-4 py-3 text-xs">{TYPE_LABELS[r.report_type]}</td>
@@ -191,6 +197,9 @@ export function AdminMonthlyReport() {
                     </td>
                     <td className="px-4 py-3 text-xs text-gray-500">
                       {formatDateTimeAr(new Date(r.created_at))}
+                    </td>
+                    <td className="px-4 py-3">
+                      <Eye className="w-4 h-4 text-gray-400 hover:text-blue-500 transition-colors" />
                     </td>
                   </tr>
                 ))}
@@ -304,8 +313,8 @@ export function AdminMonthlyReport() {
 
                     <div>
                       <h4 className="text-sm font-semibold text-gray-700 mb-3">حسب الحالة</h4>
-                      <div className="grid grid-cols-2 gap-3">
-                        {['pending', 'in_review', 'action_taken', 'closed'].map((status) => {
+                      <div className="grid grid-cols-3 gap-3">
+                        {['pending', 'in_progress', 'closed'].map((status) => {
                           const count = md.byStatus[status] || 0;
                           return (
                             <button

@@ -1,9 +1,10 @@
 import { useState, useEffect, useMemo } from 'react';
 import {
   Users, Search, Download, ChevronDown, ChevronUp,
-  FileText, Award, Clock,
+  FileText, Award, Clock, Eye,
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
+import { SafetyReport } from '../../types';
 import {
   STATUS_LABELS, TYPE_LABELS, STATUS_DOT_COLORS,
   formatDateAr,
@@ -34,14 +35,13 @@ interface EmployeeData {
   profile: EmployeeProfile;
   reports: Report[];
   pending: number;
-  inReview: number;
-  actionTaken: number;
+  inProgress: number;
   closed: number;
 }
 
 type SortKey = 'name' | 'total' | 'points' | 'pending';
 
-export function AdminEmployeeStats() {
+export function AdminEmployeeStats({ onViewReport }: { onViewReport: (report: SafetyReport) => void }) {
   const [employees, setEmployees] = useState<EmployeeData[]>([]);
   const [reports, setReports] = useState<Report[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -74,8 +74,7 @@ export function AdminEmployeeStats() {
         profile: p,
         reports: [],
         pending: 0,
-        inReview: 0,
-        actionTaken: 0,
+        inProgress: 0,
         closed: 0,
       });
     });
@@ -85,8 +84,7 @@ export function AdminEmployeeStats() {
       if (emp) {
         emp.reports.push(r);
         if (r.status === 'pending') emp.pending++;
-        else if (r.status === 'in_review') emp.inReview++;
-        else if (r.status === 'action_taken') emp.actionTaken++;
+        else if (r.status === 'in_progress') emp.inProgress++;
         else if (r.status === 'closed') emp.closed++;
       }
     });
@@ -147,8 +145,7 @@ export function AdminEmployeeStats() {
         department: e.profile.department || '-',
         totalReports: e.reports.length,
         pending: e.pending,
-        inReview: e.inReview,
-        actionTaken: e.actionTaken,
+        inProgress: e.inProgress,
         closed: e.closed,
         points: e.profile.points,
       }))
@@ -167,6 +164,13 @@ export function AdminEmployeeStats() {
       })),
       `بلاغات_${emp.profile.full_name}.csv`
     );
+  };
+
+  const handleViewReport = (reportId: string) => {
+    const r = reports.find((rep) => rep.id === reportId);
+    if (r) {
+      onViewReport(r as unknown as SafetyReport);
+    }
   };
 
   const SortIcon = ({ field }: { field: SortKey }) => {
@@ -287,6 +291,7 @@ export function AdminEmployeeStats() {
                     setExpandedEmployee(expandedEmployee === emp.profile.id ? null : emp.profile.id)
                   }
                   onExport={() => handleExportEmployeeReports(emp)}
+                  onViewReport={handleViewReport}
                 />
               ))}
             </tbody>
@@ -322,13 +327,14 @@ function MiniStat({
 }
 
 function EmployeeRow({
-  idx, data, expanded, onToggle, onExport,
+  idx, data, expanded, onToggle, onExport, onViewReport,
 }: {
   idx: number;
   data: EmployeeData;
   expanded: boolean;
   onToggle: () => void;
   onExport: () => void;
+  onViewReport: (reportId: string) => void;
 }) {
   return (
     <>
@@ -360,11 +366,8 @@ function EmployeeRow({
         </td>
         <td className="px-5 py-4">
           <div className="flex items-center gap-1.5">
-            {data.inReview > 0 && (
-              <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">{data.inReview} مراجعة</span>
-            )}
-            {data.actionTaken > 0 && (
-              <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full">{data.actionTaken} إجراء</span>
+            {data.inProgress > 0 && (
+              <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">{data.inProgress} جاري</span>
             )}
             {data.closed > 0 && (
               <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full">{data.closed} مغلق</span>
@@ -401,18 +404,14 @@ function EmployeeRow({
                 </button>
               </div>
 
-              <div className="grid grid-cols-4 gap-3">
+              <div className="grid grid-cols-3 gap-3">
                 <div className="text-center p-3 bg-yellow-50 rounded-lg">
                   <p className="text-lg font-bold text-yellow-700">{data.pending}</p>
                   <p className="text-xs text-yellow-600">انتظار</p>
                 </div>
                 <div className="text-center p-3 bg-blue-50 rounded-lg">
-                  <p className="text-lg font-bold text-blue-700">{data.inReview}</p>
-                  <p className="text-xs text-blue-600">مراجعة</p>
-                </div>
-                <div className="text-center p-3 bg-green-50 rounded-lg">
-                  <p className="text-lg font-bold text-green-700">{data.actionTaken}</p>
-                  <p className="text-xs text-green-600">إجراء</p>
+                  <p className="text-lg font-bold text-blue-700">{data.inProgress}</p>
+                  <p className="text-xs text-blue-600">جاري العمل</p>
                 </div>
                 <div className="text-center p-3 bg-gray-100 rounded-lg">
                   <p className="text-lg font-bold text-gray-700">{data.closed}</p>
@@ -430,11 +429,19 @@ function EmployeeRow({
                         <th className="text-right py-2 px-3">الوصف</th>
                         <th className="text-right py-2 px-3">الحالة</th>
                         <th className="text-right py-2 px-3">التاريخ</th>
+                        <th className="text-right py-2 px-3"></th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100">
                       {data.reports.slice(0, 10).map((r) => (
-                        <tr key={r.id} className="hover:bg-white">
+                        <tr
+                          key={r.id}
+                          className="hover:bg-white cursor-pointer"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onViewReport(r.id);
+                          }}
+                        >
                           <td className="py-2 px-3 font-mono text-xs">{r.report_number}</td>
                           <td className="py-2 px-3">
                             <span className="text-xs">{TYPE_LABELS[r.report_type] || r.report_type}</span>
@@ -448,6 +455,9 @@ function EmployeeRow({
                           </td>
                           <td className="py-2 px-3 text-xs text-gray-500">
                             {formatDateAr(new Date(r.created_at))}
+                          </td>
+                          <td className="py-2 px-3">
+                            <Eye className="w-4 h-4 text-gray-400 hover:text-blue-500 transition-colors" />
                           </td>
                         </tr>
                       ))}

@@ -3,6 +3,7 @@ import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { Login } from './components/auth/Login';
 import { Register } from './components/auth/Register';
 import { EmployeeDashboard } from './components/employee/EmployeeDashboard';
+import { EmployeeReportDetail } from './components/employee/EmployeeReportDetail';
 import { CreateReport } from './components/employee/CreateReport';
 import { Leaderboard } from './components/employee/Leaderboard';
 import { AdminDashboard } from './components/admin/AdminDashboard';
@@ -10,26 +11,32 @@ import { ReportDetail } from './components/admin/ReportDetail';
 import { SafetyReport } from './types';
 import { supabase } from './lib/supabase';
 
-type View = 'dashboard' | 'create-report' | 'leaderboard' | 'report-detail';
+type View = 'dashboard' | 'create-report' | 'leaderboard' | 'report-detail' | 'employee-report-detail';
 
 function AppContent() {
   const { user, profile, role, loading } = useAuth();
   const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
   const [currentView, setCurrentView] = useState<View>('dashboard');
   const [selectedReport, setSelectedReport] = useState<SafetyReport | null>(null);
+  const [selectedReportId, setSelectedReportId] = useState<string | null>(null);
 
   const handleNavigateToReport = useCallback(async (reportId: string) => {
-    const { data, error } = await supabase
-      .from('safety_reports')
-      .select('*')
-      .eq('id', reportId)
-      .maybeSingle();
+    if (role === 'admin') {
+      const { data, error } = await supabase
+        .from('safety_reports')
+        .select('*')
+        .eq('id', reportId)
+        .maybeSingle();
 
-    if (!error && data) {
-      setSelectedReport(data as SafetyReport);
-      setCurrentView('report-detail');
+      if (!error && data) {
+        setSelectedReport(data as SafetyReport);
+        setCurrentView('report-detail');
+      }
+    } else {
+      setSelectedReportId(reportId);
+      setCurrentView('employee-report-detail');
     }
-  }, []);
+  }, [role]);
 
   if (loading) {
     return (
@@ -91,11 +98,28 @@ function AppContent() {
           onBack={() => setCurrentView('dashboard')}
         />
       );
+    case 'employee-report-detail':
+      if (selectedReportId) {
+        return (
+          <EmployeeReportDetail
+            reportId={selectedReportId}
+            onBack={() => {
+              setCurrentView('dashboard');
+              setSelectedReportId(null);
+            }}
+          />
+        );
+      }
+      return null;
     default:
       return (
         <EmployeeDashboard
           onCreateReport={() => setCurrentView('create-report')}
           onViewLeaderboard={() => setCurrentView('leaderboard')}
+          onViewReport={(reportId) => {
+            setSelectedReportId(reportId);
+            setCurrentView('employee-report-detail');
+          }}
         />
       );
   }
