@@ -49,6 +49,9 @@ export function EmployeeDashboard({ onCreateReport, onViewLeaderboard, onViewRep
       const currentYear = now.getFullYear();
       const monthStart = new Date(currentYear, currentMonth, 1).toISOString();
 
+      console.log('Loading employee reports for user:', user.id);
+      console.log('Month start:', monthStart);
+
       const { data: reportsData, error } = await supabase
         .from('safety_reports')
         .select('*')
@@ -56,7 +59,12 @@ export function EmployeeDashboard({ onCreateReport, onViewLeaderboard, onViewRep
         .gte('created_at', monthStart)
         .order('created_at', { ascending: false });
 
-      if (error) throw error;
+      if (error) {
+        console.error('Error loading employee reports:', error);
+        throw error;
+      }
+
+      console.log('Loaded employee reports:', reportsData);
 
       const monthPoints = (reportsData || []).reduce((sum, r) => sum + (r.points_awarded || 0), 0);
 

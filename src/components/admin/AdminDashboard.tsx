@@ -54,8 +54,16 @@ export function AdminDashboard({ onViewReport, onNavigateToReport }: {
   const [deletingReportId, setDeletingReportId] = useState<string | null>(null);
 
   useEffect(() => {
-    if (activeTab === 'reports') loadReports();
+    if (activeTab === 'reports') {
+      console.log('Active tab changed to reports, loading...');
+      loadReports();
+    }
   }, [activeTab]);
+
+  useEffect(() => {
+    console.log('Reports state updated:', reports.length, 'reports');
+    console.log('Filtered reports:', filteredReports.length);
+  }, [reports, filteredReports]);
 
   useEffect(() => {
     if (activeTab === 'reports') {
@@ -71,9 +79,13 @@ export function AdminDashboard({ onViewReport, onNavigateToReport }: {
     try {
       const { data, error } = await supabase
         .from('safety_reports')
-        .select('*, employee:profiles(full_name, email, department)')
+        .select('*, employee:profiles!safety_reports_employee_id_fkey(full_name, email, department)')
         .order('created_at', { ascending: false });
-      if (error) throw error;
+      if (error) {
+        console.error('Error in loadReports:', error);
+        throw error;
+      }
+      console.log('Loaded reports:', data);
       setReports(data as ReportWithEmployee[]);
     } catch (error) {
       console.error('Error loading reports:', error);
