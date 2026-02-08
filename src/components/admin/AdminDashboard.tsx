@@ -60,10 +60,6 @@ export function AdminDashboard({ onViewReport, onNavigateToReport }: {
     }
   }, [activeTab]);
 
-  useEffect(() => {
-    console.log('Reports state updated:', reports.length, 'reports');
-    console.log('Filtered reports:', filteredReports.length);
-  }, [reports, filteredReports]);
 
   useEffect(() => {
     if (activeTab === 'reports') {
@@ -81,11 +77,7 @@ export function AdminDashboard({ onViewReport, onNavigateToReport }: {
         .from('safety_reports')
         .select('*, employee:profiles!safety_reports_employee_id_fkey(full_name, email, department)')
         .order('created_at', { ascending: false });
-      if (error) {
-        console.error('Error in loadReports:', error);
-        throw error;
-      }
-      console.log('Loaded reports:', data);
+      if (error) throw error;
       setReports(data as ReportWithEmployee[]);
     } catch (error) {
       console.error('Error loading reports:', error);
