@@ -35,7 +35,7 @@ export function AdminAnalytics({ onViewReport }: { onViewReport: (report: Safety
   const loadReports = async () => {
     const { data, error } = await supabase
       .from('safety_reports')
-      .select('*, employee:profiles(full_name, email, department)')
+      .select('*, employee:profiles!safety_reports_employee_id_fkey(full_name, email, department)')
       .order('created_at', { ascending: false });
     if (!error && data) setReports(data as Report[]);
     setIsLoading(false);
