@@ -42,28 +42,27 @@ export function EmployeeDashboard({ onCreateReport, onViewLeaderboard }: {
     if (!user) return;
 
     try {
+      const now = new Date();
+      const currentMonth = now.getMonth();
+      const currentYear = now.getFullYear();
+      const monthStart = new Date(currentYear, currentMonth, 1).toISOString();
+
       const { data: reportsData, error } = await supabase
         .from('safety_reports')
         .select('*')
         .eq('employee_id', user.id)
+        .gte('created_at', monthStart)
         .order('created_at', { ascending: false });
 
       if (error) throw error;
 
-      const now = new Date();
-      const currentMonth = now.getMonth();
-      const currentYear = now.getFullYear();
-
-      const monthReports = reportsData?.filter(r => {
-        const date = new Date(r.created_at);
-        return date.getMonth() === currentMonth && date.getFullYear() === currentYear;
-      }).length || 0;
+      const monthPoints = (reportsData || []).reduce((sum, r) => sum + (r.points_awarded || 0), 0);
 
       setReports(reportsData || []);
       setStats({
         totalReports: reportsData?.length || 0,
-        monthReports,
-        totalPoints: profile?.points || 0,
+        monthReports: reportsData?.length || 0,
+        totalPoints: monthPoints,
         pendingReports: reportsData?.filter(r => r.status === 'pending').length || 0,
       });
     } catch (error) {
@@ -168,12 +167,16 @@ export function EmployeeDashboard({ onCreateReport, onViewLeaderboard }: {
           </div>
         )}
 
+        <div className="bg-blue-50 border border-blue-200 rounded-lg px-4 py-2 text-sm text-blue-700 font-medium">
+          إحصائيات الشهر الحالي - {new Date().toLocaleDateString('ar-SA', { month: 'long', year: 'numeric' })}
+        </div>
+
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <div className="bg-white rounded-xl shadow-sm p-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-gray-600">إجمالي البلاغات</p>
-                <p className="text-3xl font-bold text-gray-900 mt-1">{stats.totalReports}</p>
+                <p className="text-sm text-gray-600">بلاغات الشهر</p>
+                <p className="text-3xl font-bold text-gray-900 mt-1">{stats.monthReports}</p>
               </div>
               <FileText className="w-10 h-10 text-blue-500" />
             </div>
@@ -182,17 +185,7 @@ export function EmployeeDashboard({ onCreateReport, onViewLeaderboard }: {
           <div className="bg-white rounded-xl shadow-sm p-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-gray-600">بلاغات هذا الشهر</p>
-                <p className="text-3xl font-bold text-gray-900 mt-1">{stats.monthReports}</p>
-              </div>
-              <Clock className="w-10 h-10 text-green-500" />
-            </div>
-          </div>
-
-          <div className="bg-white rounded-xl shadow-sm p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-gray-600">النقاط الكلية</p>
+                <p className="text-sm text-gray-600">نقاط الشهر</p>
                 <p className="text-3xl font-bold text-gray-900 mt-1">{stats.totalPoints}</p>
               </div>
               <Trophy className="w-10 h-10 text-amber-500" />
@@ -206,6 +199,18 @@ export function EmployeeDashboard({ onCreateReport, onViewLeaderboard }: {
                 <p className="text-3xl font-bold text-gray-900 mt-1">{stats.pendingReports}</p>
               </div>
               <AlertCircle className="w-10 h-10 text-yellow-500" />
+            </div>
+          </div>
+
+          <div className="bg-white rounded-xl shadow-sm p-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-gray-600">مغلقة</p>
+                <p className="text-3xl font-bold text-gray-900 mt-1">
+                  {reports.filter(r => r.status === 'closed').length}
+                </p>
+              </div>
+              <CheckCircle className="w-10 h-10 text-green-500" />
             </div>
           </div>
         </div>
@@ -231,7 +236,7 @@ export function EmployeeDashboard({ onCreateReport, onViewLeaderboard }: {
         </div>
 
         <div className="bg-white rounded-xl shadow-sm p-6">
-          <h2 className="text-xl font-bold text-gray-900 mb-4">آخر البلاغات</h2>
+          <h2 className="text-xl font-bold text-gray-900 mb-4">بلاغات هذا الشهر</h2>
           {reports.length === 0 ? (
             <div className="text-center py-12">
               <FileText className="w-16 h-16 text-gray-300 mx-auto mb-4" />

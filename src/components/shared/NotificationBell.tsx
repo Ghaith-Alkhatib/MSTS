@@ -4,7 +4,7 @@ import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/AuthContext';
 import { Notification } from '../../types';
 
-export function NotificationBell() {
+export function NotificationBell({ onNavigateToReport }: { onNavigateToReport?: (reportId: string) => void }) {
   const { user } = useAuth();
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [showDropdown, setShowDropdown] = useState(false);
@@ -83,14 +83,22 @@ export function NotificationBell() {
     setUnreadCount(0);
   };
 
+  const handleNotificationClick = async (notification: Notification) => {
+    if (!notification.is_read) {
+      await markAsRead(notification.id);
+    }
+
+    if (notification.report_id && onNavigateToReport) {
+      setShowDropdown(false);
+      onNavigateToReport(notification.report_id);
+    }
+  };
+
   const getNotificationIcon = (type: string) => {
     switch (type) {
-      case 'response_added':
-        return '💬';
-      case 'status_changed':
-        return '🔄';
-      default:
-        return '📢';
+      case 'response_added': return '💬';
+      case 'status_changed': return '🔄';
+      default: return '📢';
     }
   };
 
@@ -153,11 +161,7 @@ export function NotificationBell() {
                       className={`p-4 hover:bg-gray-50 transition-colors cursor-pointer ${
                         !notification.is_read ? 'bg-blue-50' : ''
                       }`}
-                      onClick={() => {
-                        if (!notification.is_read) {
-                          markAsRead(notification.id);
-                        }
-                      }}
+                      onClick={() => handleNotificationClick(notification)}
                     >
                       <div className="flex items-start gap-3">
                         <span className="text-2xl">

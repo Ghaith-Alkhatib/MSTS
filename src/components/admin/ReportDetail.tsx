@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { ArrowLeft, MapPin, Clock, Send, Loader2, ImageIcon, User, Calendar, Upload, X } from 'lucide-react';
+import { ArrowLeft, MapPin, Clock, Send, Loader2, ImageIcon, User, Calendar, Upload, X, Star, UserCheck } from 'lucide-react';
 import { SafetyReport } from '../../types';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/AuthContext';
@@ -27,6 +27,12 @@ interface Response {
   response_images?: ResponseImage[];
 }
 
+interface EmployeeOption {
+  id: string;
+  full_name: string;
+  department: string | null;
+}
+
 interface ReportWithDetails {
   id: string;
   report_number: string;
@@ -34,6 +40,9 @@ interface ReportWithDetails {
   description: string;
   location: string | null;
   status: string;
+  points_awarded: number;
+  resolved_by_id: string | null;
+  resolved_by_name: string | null;
   created_at: string;
   updated_at: string;
   employee_id: string;
@@ -55,6 +64,10 @@ export function ReportDetail({ report, onBack, onUpdate }: {
   const [reportDetails, setReportDetails] = useState<ReportWithDetails | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [newStatus, setNewStatus] = useState<string>(report.status);
+  const [pointsToAward, setPointsToAward] = useState<number>(0);
+  const [resolverType, setResolverType] = useState<'reporter' | 'other'>('reporter');
+  const [selectedResolverId, setSelectedResolverId] = useState<string>('');
+  const [employees, setEmployees] = useState<EmployeeOption[]>([]);
   const [responseText, setResponseText] = useState('');
   const [correctiveAction, setCorrectiveAction] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -64,6 +77,7 @@ export function ReportDetail({ report, onBack, onUpdate }: {
 
   useEffect(() => {
     loadReportDetails();
+    loadEmployees();
   }, [report.id]);
 
   const loadReportDetails = async () => {
@@ -80,7 +94,17 @@ export function ReportDetail({ report, onBack, onUpdate }: {
         .single();
 
       if (error) throw error;
-      setReportDetails(data as ReportWithDetails);
+      const details = data as ReportWithDetails;
+      setReportDetails(details);
+      setPointsToAward(details.points_awarded || 0);
+      if (details.resolved_by_id) {
+        if (details.resolved_by_id === details.employee_id) {
+          setResolverType('reporter');
+        } else {
+          setResolverType('other');
+          setSelectedResolverId(details.resolved_by_id);
+        }
+      }
     } catch (error) {
       console.error('Error loading report details:', error);
     } finally {
@@ -88,13 +112,70 @@ export function ReportDetail({ report, onBack, onUpdate }: {
     }
   };
 
+  const loadEmployees = async () => {
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('id, full_name, department')
+      .eq('role', 'employee')
+      .order('full_name');
+
+    if (!error && data) {
+      setEmployees(data);
+    }
+  };
+
   const handleUpdateStatus = async () => {
-    if (newStatus === report.status) return;
+    if (!reportDetails) return;
 
     try {
+      const updateData: Record<string, unknown> = {
+        status: newStatus,
+        points_awarded: pointsToAward,
+        updated_at: new Date().toISOString(),
+      };
+
+      if (newStatus === 'closed') {
+        let resolverId: string;
+        let resolverName: string;
+
+        if (resolverType === 'reporter') {
+          resolverId = reportDetails.employee_id;
+          resolverName = reportDetails.employee.full_name;
+        } else {
+          resolverId = selectedResolverId;
+          const resolver = employees.find(e => e.id === selectedResolverId);
+          resolverName = resolver?.full_name || '';
+        }
+
+        if (!resolverId) {
+          alert('يرجى تحديد الشخص الذي حل المشكلة');
+          return;
+        }
+
+        updateData.resolved_by_id = resolverId;
+        updateData.resolved_by_name = resolverName;
+
+        const bonusPoints = resolverType === 'reporter' ? 1 : 2;
+
+        await supabase.rpc('increment', {
+          row_id: resolverId,
+          x: bonusPoints,
+        });
+      }
+
+      if (pointsToAward > 0 && pointsToAward !== reportDetails.points_awarded) {
+        const diff = pointsToAward - reportDetails.points_awarded;
+        if (diff !== 0) {
+          await supabase.rpc('increment', {
+            row_id: reportDetails.employee_id,
+            x: diff,
+          });
+        }
+      }
+
       const { error } = await supabase
         .from('safety_reports')
-        .update({ status: newStatus, updated_at: new Date().toISOString() })
+        .update(updateData)
         .eq('id', report.id);
 
       if (error) throw error;
@@ -115,8 +196,6 @@ export function ReportDetail({ report, onBack, onUpdate }: {
   };
 
   const uploadResponseImages = async (responseId: string) => {
-    const uploadedUrls: string[] = [];
-
     for (const file of responseImages) {
       const fileExt = file.name.split('.').pop();
       const fileName = `${responseId}/${Math.random()}.${fileExt}`;
@@ -131,15 +210,11 @@ export function ReportDetail({ report, onBack, onUpdate }: {
         .from('safety-images')
         .getPublicUrl(fileName);
 
-      uploadedUrls.push(publicUrl);
-
       await supabase.from('response_images').insert({
         response_id: responseId,
         image_url: publicUrl,
       });
     }
-
-    return uploadedUrls;
   };
 
   const handleSubmitResponse = async (e: React.FormEvent) => {
@@ -182,31 +257,21 @@ export function ReportDetail({ report, onBack, onUpdate }: {
 
   const getReportTypeText = (type: string) => {
     switch (type) {
-      case 'unsafe_act':
-        return 'سلوك غير آمن';
-      case 'unsafe_condition':
-        return 'وضع غير آمن';
-      case 'near_miss':
-        return 'حادث كاد أن يقع';
-      case 'observation':
-        return 'ملاحظة عامة';
-      default:
-        return type;
+      case 'unsafe_act': return 'سلوك غير آمن';
+      case 'unsafe_condition': return 'وضع غير آمن';
+      case 'near_miss': return 'حادث كاد أن يقع';
+      case 'observation': return 'ملاحظة عامة';
+      default: return type;
     }
   };
 
   const getReportTypeColor = (type: string) => {
     switch (type) {
-      case 'unsafe_act':
-        return 'bg-red-100 text-red-800';
-      case 'unsafe_condition':
-        return 'bg-orange-100 text-orange-800';
-      case 'near_miss':
-        return 'bg-yellow-100 text-yellow-800';
-      case 'observation':
-        return 'bg-blue-100 text-blue-800';
-      default:
-        return 'bg-gray-100 text-gray-800';
+      case 'unsafe_act': return 'bg-red-100 text-red-800';
+      case 'unsafe_condition': return 'bg-orange-100 text-orange-800';
+      case 'near_miss': return 'bg-yellow-100 text-yellow-800';
+      case 'observation': return 'bg-blue-100 text-blue-800';
+      default: return 'bg-gray-100 text-gray-800';
     }
   };
 
@@ -215,11 +280,13 @@ export function ReportDetail({ report, onBack, onUpdate }: {
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
-          <p className="mt-4 text-gray-600">جارٍ التحميل...</p>
+          <p className="mt-4 text-gray-600">...</p>
         </div>
       </div>
     );
   }
+
+  const isClosed = reportDetails.status === 'closed';
 
   return (
     <div className="min-h-screen bg-gray-50" dir="rtl">
@@ -256,19 +323,13 @@ export function ReportDetail({ report, onBack, onUpdate }: {
               <span className="text-sm">{reportDetails.employee.full_name}</span>
             </div>
             {reportDetails.employee.department && (
-              <span className="text-sm text-gray-600">
-                {reportDetails.employee.department}
-              </span>
+              <span className="text-sm text-gray-600">{reportDetails.employee.department}</span>
             )}
             <div className="flex items-center gap-2 text-gray-600">
               <Calendar className="w-4 h-4" />
               <span className="text-sm">
                 {new Date(reportDetails.created_at).toLocaleDateString('ar-SA', {
-                  year: 'numeric',
-                  month: 'long',
-                  day: 'numeric',
-                  hour: '2-digit',
-                  minute: '2-digit',
+                  year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit',
                 })}
               </span>
             </div>
@@ -309,28 +370,140 @@ export function ReportDetail({ report, onBack, onUpdate }: {
             </div>
           )}
 
-          <div className="border-t pt-6">
-            <h2 className="text-lg font-semibold text-gray-900 mb-3">تحديث الحالة</h2>
-            <div className="flex items-center gap-3">
-              <select
-                value={newStatus}
-                onChange={(e) => setNewStatus(e.target.value)}
-                className="flex-1 px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              >
-                <option value="pending">قيد الانتظار</option>
-                <option value="in_review">قيد المراجعة</option>
-                <option value="action_taken">تم اتخاذ إجراء</option>
-                <option value="closed">مغلق</option>
-              </select>
+          {isClosed && reportDetails.resolved_by_name && (
+            <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+              <div className="flex items-center gap-2 text-green-800 mb-1">
+                <UserCheck className="w-5 h-5" />
+                <h3 className="font-semibold">تم حل المشكلة بواسطة</h3>
+              </div>
+              <p className="text-green-700">{reportDetails.resolved_by_name}</p>
+              {reportDetails.points_awarded > 0 && (
+                <p className="text-green-600 text-sm mt-1">
+                  النقاط الممنوحة: {reportDetails.points_awarded}
+                  {reportDetails.resolved_by_id === reportDetails.employee_id
+                    ? ' (+1 نقطة إضافية لحل المشكلة)'
+                    : ` (+2 نقطة إضافية لـ ${reportDetails.resolved_by_name})`
+                  }
+                </p>
+              )}
+            </div>
+          )}
+
+          {!isClosed && (
+            <div className="border-t pt-6 space-y-5">
+              <h2 className="text-lg font-semibold text-gray-900">تحديث البلاغ</h2>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">الحالة</label>
+                <select
+                  value={newStatus}
+                  onChange={(e) => setNewStatus(e.target.value)}
+                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                >
+                  <option value="pending">قيد الانتظار</option>
+                  <option value="in_review">قيد المراجعة</option>
+                  <option value="action_taken">تم اتخاذ إجراء</option>
+                  <option value="closed">مغلق</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  <Star className="w-4 h-4 inline ml-1" />
+                  تقييم البلاغ (نقاط)
+                </label>
+                <div className="flex items-center gap-3">
+                  {[1, 2, 3].map((pts) => (
+                    <button
+                      key={pts}
+                      type="button"
+                      onClick={() => setPointsToAward(pts)}
+                      className={`flex-1 py-3 rounded-lg border-2 font-bold text-lg transition-all ${
+                        pointsToAward === pts
+                          ? 'border-blue-500 bg-blue-50 text-blue-700'
+                          : 'border-gray-200 bg-white text-gray-500 hover:border-gray-300'
+                      }`}
+                    >
+                      {pts} {pts === 1 ? 'نقطة' : 'نقاط'}
+                    </button>
+                  ))}
+                  {pointsToAward > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setPointsToAward(0)}
+                      className="px-4 py-3 rounded-lg border-2 border-gray-200 text-gray-400 hover:border-red-300 hover:text-red-500 transition-all text-sm"
+                    >
+                      بدون نقاط
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {newStatus === 'closed' && (
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-5 space-y-4">
+                  <h3 className="font-semibold text-blue-900 flex items-center gap-2">
+                    <UserCheck className="w-5 h-5" />
+                    من حل هذه المشكلة؟
+                  </h3>
+
+                  <div className="flex gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setResolverType('reporter')}
+                      className={`flex-1 py-3 rounded-lg border-2 text-sm font-medium transition-all ${
+                        resolverType === 'reporter'
+                          ? 'border-blue-500 bg-white text-blue-700'
+                          : 'border-gray-200 bg-white text-gray-500 hover:border-gray-300'
+                      }`}
+                    >
+                      مقدم البلاغ ({reportDetails.employee.full_name})
+                      <span className="block text-xs mt-1 text-gray-400">+1 نقطة إضافية</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setResolverType('other')}
+                      className={`flex-1 py-3 rounded-lg border-2 text-sm font-medium transition-all ${
+                        resolverType === 'other'
+                          ? 'border-blue-500 bg-white text-blue-700'
+                          : 'border-gray-200 bg-white text-gray-500 hover:border-gray-300'
+                      }`}
+                    >
+                      شخص آخر
+                      <span className="block text-xs mt-1 text-gray-400">+2 نقاط إضافية للشخص</span>
+                    </button>
+                  </div>
+
+                  {resolverType === 'other' && (
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">اختر الموظف</label>
+                      <select
+                        value={selectedResolverId}
+                        onChange={(e) => setSelectedResolverId(e.target.value)}
+                        className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      >
+                        <option value="">-- اختر الموظف --</option>
+                        {employees
+                          .filter(e => e.id !== reportDetails.employee_id)
+                          .map((emp) => (
+                            <option key={emp.id} value={emp.id}>
+                              {emp.full_name} {emp.department ? `(${emp.department})` : ''}
+                            </option>
+                          ))}
+                      </select>
+                    </div>
+                  )}
+                </div>
+              )}
+
               <button
                 onClick={handleUpdateStatus}
-                disabled={newStatus === report.status}
-                className="px-6 py-3 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed"
+                disabled={newStatus === 'closed' && resolverType === 'other' && !selectedResolverId}
+                className="w-full px-6 py-3 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed"
               >
-                تحديث
+                تحديث البلاغ
               </button>
             </div>
-          </div>
+          )}
         </div>
 
         {reportDetails.report_responses && reportDetails.report_responses.length > 0 && (
@@ -346,11 +519,7 @@ export function ReportDetail({ report, onBack, onUpdate }: {
                     <span className="font-medium text-gray-900">{response.admin.full_name}</span>
                     <span className="text-sm text-gray-500">
                       {new Date(response.created_at).toLocaleDateString('ar-SA', {
-                        year: 'numeric',
-                        month: 'short',
-                        day: 'numeric',
-                        hour: '2-digit',
-                        minute: '2-digit',
+                        year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit',
                       })}
                     </span>
                   </div>
@@ -383,88 +552,90 @@ export function ReportDetail({ report, onBack, onUpdate }: {
           </div>
         )}
 
-        <div className="bg-white rounded-xl shadow-sm p-6">
-          <h2 className="text-lg font-semibold text-gray-900 mb-4">إضافة رد</h2>
-          <form onSubmit={handleSubmitResponse} className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">الرد</label>
-              <textarea
-                value={responseText}
-                onChange={(e) => setResponseText(e.target.value)}
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
-                rows={4}
-                placeholder="اكتب ردك على البلاغ..."
-                required
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">الإجراء التصحيحي (اختياري)</label>
-              <textarea
-                value={correctiveAction}
-                onChange={(e) => setCorrectiveAction(e.target.value)}
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
-                rows={3}
-                placeholder="اكتب الإجراء التصحيحي المتخذ..."
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">إرفاق صور (اختياري)</label>
-              <div className="space-y-3">
-                <label className="flex items-center justify-center w-full px-4 py-3 border-2 border-dashed border-gray-300 rounded-lg cursor-pointer hover:border-blue-500 hover:bg-blue-50 transition-colors">
-                  <Upload className="w-5 h-5 text-gray-400 ml-2" />
-                  <span className="text-gray-600">اختر صور للإرفاق</span>
-                  <input
-                    type="file"
-                    accept="image/*"
-                    multiple
-                    onChange={handleImageSelect}
-                    className="hidden"
-                  />
-                </label>
-                {responseImages.length > 0 && (
-                  <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                    {responseImages.map((file, index) => (
-                      <div key={index} className="relative group">
-                        <img
-                          src={URL.createObjectURL(file)}
-                          alt={`معاينة ${index + 1}`}
-                          className="w-full h-32 object-cover rounded-lg"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => removeImage(index)}
-                          className="absolute top-2 left-2 p-1 bg-red-500 text-white rounded-full hover:bg-red-600 transition-colors opacity-0 group-hover:opacity-100"
-                        >
-                          <X className="w-4 h-4" />
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                )}
+        {!isClosed && (
+          <div className="bg-white rounded-xl shadow-sm p-6">
+            <h2 className="text-lg font-semibold text-gray-900 mb-4">إضافة رد</h2>
+            <form onSubmit={handleSubmitResponse} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">الرد</label>
+                <textarea
+                  value={responseText}
+                  onChange={(e) => setResponseText(e.target.value)}
+                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
+                  rows={4}
+                  placeholder="اكتب ردك على البلاغ..."
+                  required
+                />
               </div>
-            </div>
 
-            <button
-              type="submit"
-              disabled={isSubmitting || !responseText.trim()}
-              className="w-full bg-blue-600 text-white py-3 rounded-lg font-semibold hover:bg-blue-700 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-            >
-              {isSubmitting ? (
-                <>
-                  <Loader2 className="w-5 h-5 animate-spin" />
-                  <span>جارٍ الإرسال...</span>
-                </>
-              ) : (
-                <>
-                  <Send className="w-5 h-5" />
-                  <span>إرسال الرد</span>
-                </>
-              )}
-            </button>
-          </form>
-        </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">الإجراء التصحيحي (اختياري)</label>
+                <textarea
+                  value={correctiveAction}
+                  onChange={(e) => setCorrectiveAction(e.target.value)}
+                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
+                  rows={3}
+                  placeholder="اكتب الإجراء التصحيحي المتخذ..."
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">إرفاق صور (اختياري)</label>
+                <div className="space-y-3">
+                  <label className="flex items-center justify-center w-full px-4 py-3 border-2 border-dashed border-gray-300 rounded-lg cursor-pointer hover:border-blue-500 hover:bg-blue-50 transition-colors">
+                    <Upload className="w-5 h-5 text-gray-400 ml-2" />
+                    <span className="text-gray-600">اختر صور للإرفاق</span>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      multiple
+                      onChange={handleImageSelect}
+                      className="hidden"
+                    />
+                  </label>
+                  {responseImages.length > 0 && (
+                    <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                      {responseImages.map((file, index) => (
+                        <div key={index} className="relative group">
+                          <img
+                            src={URL.createObjectURL(file)}
+                            alt={`معاينة ${index + 1}`}
+                            className="w-full h-32 object-cover rounded-lg"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => removeImage(index)}
+                            className="absolute top-2 left-2 p-1 bg-red-500 text-white rounded-full hover:bg-red-600 transition-colors opacity-0 group-hover:opacity-100"
+                          >
+                            <X className="w-4 h-4" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <button
+                type="submit"
+                disabled={isSubmitting || !responseText.trim()}
+                className="w-full bg-blue-600 text-white py-3 rounded-lg font-semibold hover:bg-blue-700 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+              >
+                {isSubmitting ? (
+                  <>
+                    <Loader2 className="w-5 h-5 animate-spin" />
+                    <span>...</span>
+                  </>
+                ) : (
+                  <>
+                    <Send className="w-5 h-5" />
+                    <span>إرسال الرد</span>
+                  </>
+                )}
+              </button>
+            </form>
+          </div>
+        )}
       </main>
 
       {selectedImage && (

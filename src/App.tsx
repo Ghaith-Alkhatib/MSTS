@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { Login } from './components/auth/Login';
 import { Register } from './components/auth/Register';
@@ -8,6 +8,7 @@ import { Leaderboard } from './components/employee/Leaderboard';
 import { AdminDashboard } from './components/admin/AdminDashboard';
 import { ReportDetail } from './components/admin/ReportDetail';
 import { SafetyReport } from './types';
+import { supabase } from './lib/supabase';
 
 type View = 'dashboard' | 'create-report' | 'leaderboard' | 'report-detail';
 
@@ -16,6 +17,19 @@ function AppContent() {
   const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
   const [currentView, setCurrentView] = useState<View>('dashboard');
   const [selectedReport, setSelectedReport] = useState<SafetyReport | null>(null);
+
+  const handleNavigateToReport = useCallback(async (reportId: string) => {
+    const { data, error } = await supabase
+      .from('safety_reports')
+      .select('*')
+      .eq('id', reportId)
+      .maybeSingle();
+
+    if (!error && data) {
+      setSelectedReport(data as SafetyReport);
+      setCurrentView('report-detail');
+    }
+  }, []);
 
   if (loading) {
     return (
@@ -59,6 +73,7 @@ function AppContent() {
           setSelectedReport(report);
           setCurrentView('report-detail');
         }}
+        onNavigateToReport={handleNavigateToReport}
       />
     );
   }

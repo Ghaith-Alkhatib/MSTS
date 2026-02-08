@@ -6,9 +6,8 @@ import { useAuth } from '../../contexts/AuthContext';
 interface LeaderboardEntry {
   id: string;
   full_name: string;
-  email: string;
   department: string;
-  points: number;
+  monthPoints: number;
   report_count: number;
   rank: number;
 }
@@ -17,63 +16,53 @@ export function Leaderboard({ onBack }: { onBack: () => void }) {
   const { user } = useAuth();
   const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [period, setPeriod] = useState<'month' | 'year' | 'all'>('month');
   const [userRank, setUserRank] = useState<LeaderboardEntry | null>(null);
 
   useEffect(() => {
     loadLeaderboard();
-  }, [period]);
+  }, []);
 
   const loadLeaderboard = async () => {
     setIsLoading(true);
     try {
-      let query = supabase
-        .from('profiles')
-        .select(`
-          id,
-          full_name,
-          email,
-          department,
-          points
-        `)
-        .eq('role', 'employee')
-        .order('points', { ascending: false });
+      const now = new Date();
+      const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
 
-      const { data: profiles, error: profilesError } = await query;
+      const { data: profiles, error: profilesError } = await supabase
+        .from('profiles')
+        .select('id, full_name, department')
+        .eq('role', 'employee');
+
       if (profilesError) throw profilesError;
 
-      const now = new Date();
-      let startDate: Date;
+      const { data: reports, error: reportsError } = await supabase
+        .from('safety_reports')
+        .select('employee_id, points_awarded')
+        .gte('created_at', monthStart);
 
-      if (period === 'month') {
-        startDate = new Date(now.getFullYear(), now.getMonth(), 1);
-      } else if (period === 'year') {
-        startDate = new Date(now.getFullYear(), 0, 1);
-      } else {
-        startDate = new Date(0);
-      }
+      if (reportsError) throw reportsError;
 
-      const leaderboardData: LeaderboardEntry[] = await Promise.all(
-        profiles.map(async (profile, index) => {
-          const { count } = await supabase
-            .from('safety_reports')
-            .select('*', { count: 'exact', head: true })
-            .eq('employee_id', profile.id)
-            .gte('created_at', startDate.toISOString());
+      const employeeStats: Record<string, { count: number; points: number }> = {};
+      (reports || []).forEach((r) => {
+        if (!employeeStats[r.employee_id]) {
+          employeeStats[r.employee_id] = { count: 0, points: 0 };
+        }
+        employeeStats[r.employee_id].count++;
+        employeeStats[r.employee_id].points += r.points_awarded || 0;
+      });
 
-          return {
-            ...profile,
-            report_count: count || 0,
-            rank: index + 1,
-          };
-        })
-      );
+      const leaderboardData: LeaderboardEntry[] = (profiles || []).map((p) => ({
+        id: p.id,
+        full_name: p.full_name,
+        department: p.department || '',
+        monthPoints: employeeStats[p.id]?.points || 0,
+        report_count: employeeStats[p.id]?.count || 0,
+        rank: 0,
+      }));
 
       leaderboardData.sort((a, b) => {
-        if (b.report_count !== a.report_count) {
-          return b.report_count - a.report_count;
-        }
-        return b.points - a.points;
+        if (b.monthPoints !== a.monthPoints) return b.monthPoints - a.monthPoints;
+        return b.report_count - a.report_count;
       });
 
       leaderboardData.forEach((entry, index) => {
@@ -81,9 +70,7 @@ export function Leaderboard({ onBack }: { onBack: () => void }) {
       });
 
       setLeaderboard(leaderboardData);
-
-      const currentUserRank = leaderboardData.find(entry => entry.id === user?.id);
-      setUserRank(currentUserRank || null);
+      setUserRank(leaderboardData.find(e => e.id === user?.id) || null);
     } catch (error) {
       console.error('Error loading leaderboard:', error);
     } finally {
@@ -93,35 +80,20 @@ export function Leaderboard({ onBack }: { onBack: () => void }) {
 
   const getRankIcon = (rank: number) => {
     switch (rank) {
-      case 1:
-        return <Trophy className="w-8 h-8 text-yellow-500" />;
-      case 2:
-        return <Medal className="w-8 h-8 text-gray-400" />;
-      case 3:
-        return <Award className="w-8 h-8 text-orange-600" />;
-      default:
-        return <Star className="w-8 h-8 text-gray-300" />;
+      case 1: return <Trophy className="w-8 h-8 text-yellow-500" />;
+      case 2: return <Medal className="w-8 h-8 text-gray-400" />;
+      case 3: return <Award className="w-8 h-8 text-orange-600" />;
+      default: return <Star className="w-8 h-8 text-gray-300" />;
     }
   };
 
   const getRankBadge = (rank: number) => {
     switch (rank) {
-      case 1:
-        return 'bg-gradient-to-r from-yellow-400 to-yellow-600 text-white';
-      case 2:
-        return 'bg-gradient-to-r from-gray-300 to-gray-500 text-white';
-      case 3:
-        return 'bg-gradient-to-r from-orange-400 to-orange-600 text-white';
-      default:
-        return 'bg-gray-100 text-gray-700';
+      case 1: return 'bg-gradient-to-r from-yellow-400 to-yellow-600 text-white';
+      case 2: return 'bg-gradient-to-r from-gray-300 to-gray-500 text-white';
+      case 3: return 'bg-gradient-to-r from-orange-400 to-orange-600 text-white';
+      default: return 'bg-gray-100 text-gray-700';
     }
-  };
-
-  const getBadgeTitle = (points: number) => {
-    if (points >= 100) return '🏆 بطل السلامة الذهبي';
-    if (points >= 50) return '🥈 بطل السلامة الفضي';
-    if (points >= 20) return '🥉 بطل السلامة البرونزي';
-    return '⭐ مساهم في السلامة';
   };
 
   if (isLoading) {
@@ -129,11 +101,14 @@ export function Leaderboard({ onBack }: { onBack: () => void }) {
       <div className="min-h-screen bg-gradient-to-br from-amber-50 to-orange-50 flex items-center justify-center">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-amber-600 mx-auto"></div>
-          <p className="mt-4 text-gray-600">جارٍ التحميل...</p>
+          <p className="mt-4 text-gray-600">...</p>
         </div>
       </div>
     );
   }
+
+  const currentMonthLabel = new Date().toLocaleDateString('ar-SA', { month: 'long', year: 'numeric' });
+  const activeEntries = leaderboard.filter(e => e.report_count > 0 || e.monthPoints > 0);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-amber-50 to-orange-50" dir="rtl">
@@ -153,7 +128,7 @@ export function Leaderboard({ onBack }: { onBack: () => void }) {
             />
             <div className="flex-1">
               <h1 className="text-2xl font-bold text-gray-900">لوحة المتصدرين</h1>
-              <p className="text-sm text-gray-600">أبطال السلامة</p>
+              <p className="text-sm text-gray-600">{currentMonthLabel}</p>
             </div>
           </div>
         </div>
@@ -164,9 +139,8 @@ export function Leaderboard({ onBack }: { onBack: () => void }) {
           <div className="bg-gradient-to-r from-blue-600 to-blue-700 rounded-xl shadow-lg p-6 text-white">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-blue-100 text-sm mb-1">ترتيبك الحالي</p>
+                <p className="text-blue-100 text-sm mb-1">ترتيبك هذا الشهر</p>
                 <p className="text-4xl font-bold">#{userRank.rank}</p>
-                <p className="text-blue-100 text-sm mt-2">{getBadgeTitle(userRank.points)}</p>
               </div>
               <div className="text-left">
                 <div className="flex items-center gap-3 mb-2">
@@ -176,7 +150,7 @@ export function Leaderboard({ onBack }: { onBack: () => void }) {
                 </div>
                 <div className="flex items-center gap-3">
                   <Star className="w-6 h-6" />
-                  <span className="text-2xl font-bold">{userRank.points}</span>
+                  <span className="text-2xl font-bold">{userRank.monthPoints}</span>
                   <span className="text-blue-100">نقطة</span>
                 </div>
               </div>
@@ -188,27 +162,18 @@ export function Leaderboard({ onBack }: { onBack: () => void }) {
           <div className="flex items-center justify-between mb-6">
             <h2 className="text-xl font-bold text-gray-900 flex items-center gap-2">
               <Trophy className="w-6 h-6 text-amber-500" />
-              المتصدرون
+              المتصدرون - {currentMonthLabel}
             </h2>
-            <select
-              value={period}
-              onChange={(e) => setPeriod(e.target.value as 'month' | 'year' | 'all')}
-              className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-transparent"
-            >
-              <option value="month">هذا الشهر</option>
-              <option value="year">هذا العام</option>
-              <option value="all">الكل</option>
-            </select>
           </div>
 
-          {leaderboard.length === 0 ? (
+          {activeEntries.length === 0 ? (
             <div className="text-center py-12">
               <Trophy className="w-16 h-16 text-gray-300 mx-auto mb-4" />
-              <p className="text-gray-500">لا توجد بيانات حتى الآن</p>
+              <p className="text-gray-500">لا توجد بلاغات هذا الشهر بعد</p>
             </div>
           ) : (
             <div className="space-y-4">
-              {leaderboard.slice(0, 10).map((entry) => (
+              {activeEntries.slice(0, 10).map((entry) => (
                 <div
                   key={entry.id}
                   className={`flex items-center gap-4 p-4 rounded-xl transition-all ${
@@ -230,7 +195,6 @@ export function Leaderboard({ onBack }: { onBack: () => void }) {
                     {entry.department && (
                       <p className="text-sm text-gray-600">{entry.department}</p>
                     )}
-                    <p className="text-xs text-gray-500 mt-1">{getBadgeTitle(entry.points)}</p>
                   </div>
 
                   <div className="text-left">
@@ -240,7 +204,7 @@ export function Leaderboard({ onBack }: { onBack: () => void }) {
                     </div>
                     <div className="flex items-center gap-2">
                       <Star className="w-5 h-5 text-amber-500" />
-                      <span className="text-lg font-semibold text-gray-700">{entry.points}</span>
+                      <span className="text-lg font-semibold text-gray-700">{entry.monthPoints}</span>
                     </div>
                   </div>
 
@@ -259,20 +223,20 @@ export function Leaderboard({ onBack }: { onBack: () => void }) {
           <h3 className="text-lg font-bold text-gray-900 mb-3">نظام النقاط</h3>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
             <div className="flex items-center gap-2">
-              <div className="w-8 h-8 bg-blue-500 text-white rounded-full flex items-center justify-center font-bold">10</div>
-              <span className="text-gray-700">بلاغ بدون صورة</span>
+              <div className="w-8 h-8 bg-blue-500 text-white rounded-full flex items-center justify-center font-bold text-xs">1-3</div>
+              <span className="text-gray-700">نقاط تقييم البلاغ (يحددها المشرف)</span>
             </div>
             <div className="flex items-center gap-2">
-              <div className="w-8 h-8 bg-green-500 text-white rounded-full flex items-center justify-center font-bold">15</div>
-              <span className="text-gray-700">بلاغ مع صورة</span>
+              <div className="w-8 h-8 bg-green-500 text-white rounded-full flex items-center justify-center font-bold">+1</div>
+              <span className="text-gray-700">نقطة إضافية إذا حللت المشكلة بنفسك</span>
             </div>
             <div className="flex items-center gap-2">
-              <div className="w-8 h-8 bg-yellow-500 text-white rounded-full flex items-center justify-center font-bold">20</div>
-              <span className="text-gray-700">نقاط إضافية عند الإغلاق</span>
+              <div className="w-8 h-8 bg-teal-500 text-white rounded-full flex items-center justify-center font-bold">+2</div>
+              <span className="text-gray-700">نقاط إضافية لمن يحل مشكلة شخص آخر</span>
             </div>
             <div className="flex items-center gap-2">
               <Trophy className="w-8 h-8 text-amber-600" />
-              <span className="text-gray-700">100+ نقطة = بطل ذهبي</span>
+              <span className="text-gray-700">يتم تجديد الإحصائيات كل شهر</span>
             </div>
           </div>
         </div>

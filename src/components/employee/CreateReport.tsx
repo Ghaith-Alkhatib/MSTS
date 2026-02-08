@@ -91,7 +91,7 @@ export function CreateReport({ onBack }: { onBack: () => void }) {
             description,
             location: location || null,
             status: 'pending',
-            points_awarded: images.length > 0 ? 15 : 10,
+            points_awarded: 0,
           })
           .select()
           .single();
@@ -117,11 +117,6 @@ export function CreateReport({ onBack }: { onBack: () => void }) {
             }
           }
         }
-
-        await supabase.rpc('increment', {
-          row_id: user.id,
-          x: images.length > 0 ? 15 : 10
-        });
 
         setSubmitSuccess(true);
         setTimeout(() => {

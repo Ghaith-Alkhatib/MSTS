@@ -36,7 +36,7 @@ interface ReportWithEmployee {
   };
 }
 
-export function AdminDashboard({ onViewReport }: { onViewReport: (report: SafetyReport) => void }) {
+export function AdminDashboard({ onViewReport, onNavigateToReport }: { onViewReport: (report: SafetyReport) => void; onNavigateToReport?: (reportId: string) => void }) {
   const { signOut } = useAuth();
   const [activeTab, setActiveTab] = useState<AdminTab>('reports');
   const [reports, setReports] = useState<ReportWithEmployee[]>([]);
@@ -148,7 +148,7 @@ export function AdminDashboard({ onViewReport }: { onViewReport: (report: Safety
               </div>
             </div>
             <div className="flex items-center gap-2">
-              <NotificationBell />
+              <NotificationBell onNavigateToReport={onNavigateToReport} />
               <button
                 onClick={signOut}
                 className="flex items-center gap-2 px-4 py-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"

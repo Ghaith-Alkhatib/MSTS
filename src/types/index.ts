@@ -24,6 +24,8 @@ export interface SafetyReport {
   location: string | null;
   status: ReportStatus;
   points_awarded: number;
+  resolved_by_id: string | null;
+  resolved_by_name: string | null;
   created_at: string;
   updated_at: string;
   synced: boolean;
@@ -117,7 +119,8 @@ export const REPORT_STATUS_LABELS: Record<ReportStatus, string> = {
 };
 
 export const POINTS_CONFIG = {
-  BASE_REPORT: 10,
-  WITH_IMAGE: 5,
-  CLOSED_WITH_ACTION: 15,
+  REPORT_MIN: 1,
+  REPORT_MAX: 3,
+  RESOLVER_SELF_BONUS: 1,
+  RESOLVER_OTHER_BONUS: 2,
 };
