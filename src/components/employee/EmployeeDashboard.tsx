@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { LogOut, Plus, Trophy, Clock, CheckCircle, Loader2, FileText, Eye } from 'lucide-react';
+import { LogOut, Plus, Trophy, Clock, CheckCircle, Loader2, FileText, Eye, Calendar } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { supabase } from '../../lib/supabase';
 import { offlineSync } from '../../lib/offlineSync';
@@ -16,9 +16,10 @@ interface Report {
   points_awarded: number;
 }
 
-export function EmployeeDashboard({ onCreateReport, onViewLeaderboard, onViewReport }: {
+export function EmployeeDashboard({ onCreateReport, onViewLeaderboard, onViewMonthlyPoints, onViewReport }: {
   onCreateReport: () => void;
   onViewLeaderboard: () => void;
+  onViewMonthlyPoints: () => void;
   onViewReport: (reportId: string) => void;
 }) {
   const { user, profile, signOut } = useAuth();
@@ -45,13 +46,14 @@ export function EmployeeDashboard({ onCreateReport, onViewLeaderboard, onViewRep
 
     try {
       const now = new Date();
-      const currentMonth = now.getMonth();
+      const currentMonth = now.getMonth() + 1; // JS months are 0-11, DB uses 1-12
       const currentYear = now.getFullYear();
-      const monthStart = new Date(currentYear, currentMonth, 1).toISOString();
+      const monthStart = new Date(currentYear, currentMonth - 1, 1).toISOString();
 
       console.log('Loading employee reports for user:', user.id);
       console.log('Month start:', monthStart);
 
+      // Load reports for this month
       const { data: reportsData, error } = await supabase
         .from('safety_reports')
         .select('*')
@@ -66,7 +68,22 @@ export function EmployeeDashboard({ onCreateReport, onViewLeaderboard, onViewRep
 
       console.log('Loaded employee reports:', reportsData);
 
-      const monthPoints = (reportsData || []).reduce((sum, r) => sum + (r.points_awarded || 0), 0);
+      // Load monthly points from the new table
+      const { data: monthlyPointsData, error: pointsError } = await supabase
+        .from('monthly_employee_points')
+        .select('total_points')
+        .eq('employee_id', user.id)
+        .eq('year', currentYear)
+        .eq('month', currentMonth)
+        .maybeSingle();
+
+      if (pointsError) {
+        console.error('Error loading monthly points:', pointsError);
+      }
+
+      console.log('Loaded monthly points:', monthlyPointsData);
+
+      const monthPoints = monthlyPointsData?.total_points || 0;
 
       setReports(reportsData || []);
       setStats({
@@ -191,7 +208,7 @@ export function EmployeeDashboard({ onCreateReport, onViewLeaderboard, onViewRep
           </div>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <button
             onClick={onCreateReport}
             className="bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-xl p-8 hover:from-blue-700 hover:to-blue-800 transition-all shadow-lg hover:shadow-xl transform hover:scale-105"
@@ -208,6 +225,15 @@ export function EmployeeDashboard({ onCreateReport, onViewLeaderboard, onViewRep
             <Trophy className="w-12 h-12 mx-auto mb-3" />
             <span className="text-xl font-bold">لوحة المتصدرين</span>
             <p className="text-amber-100 text-sm mt-2">اعرف ترتيبك بين الزملاء</p>
+          </button>
+
+          <button
+            onClick={onViewMonthlyPoints}
+            className="bg-gradient-to-r from-teal-500 to-cyan-500 text-white rounded-xl p-8 hover:from-teal-600 hover:to-cyan-600 transition-all shadow-lg hover:shadow-xl transform hover:scale-105"
+          >
+            <Calendar className="w-12 h-12 mx-auto mb-3" />
+            <span className="text-xl font-bold">نقاطي الشهرية</span>
+            <p className="text-teal-100 text-sm mt-2">تتبع إنجازاتك الشهرية</p>
           </button>
         </div>
 

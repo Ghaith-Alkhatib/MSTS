@@ -6,12 +6,13 @@ import { EmployeeDashboard } from './components/employee/EmployeeDashboard';
 import { EmployeeReportDetail } from './components/employee/EmployeeReportDetail';
 import { CreateReport } from './components/employee/CreateReport';
 import { Leaderboard } from './components/employee/Leaderboard';
+import { MonthlyPointsHistory } from './components/employee/MonthlyPointsHistory';
 import { AdminDashboard } from './components/admin/AdminDashboard';
 import { ReportDetail } from './components/admin/ReportDetail';
 import { SafetyReport } from './types';
 import { supabase } from './lib/supabase';
 
-type View = 'dashboard' | 'create-report' | 'leaderboard' | 'report-detail' | 'employee-report-detail';
+type View = 'dashboard' | 'create-report' | 'leaderboard' | 'report-detail' | 'employee-report-detail' | 'monthly-points';
 
 function AppContent() {
   const { user, profile, role, loading } = useAuth();
@@ -98,6 +99,12 @@ function AppContent() {
           onBack={() => setCurrentView('dashboard')}
         />
       );
+    case 'monthly-points':
+      return (
+        <MonthlyPointsHistory
+          onBack={() => setCurrentView('dashboard')}
+        />
+      );
     case 'employee-report-detail':
       if (selectedReportId) {
         return (
@@ -116,6 +123,7 @@ function AppContent() {
         <EmployeeDashboard
           onCreateReport={() => setCurrentView('create-report')}
           onViewLeaderboard={() => setCurrentView('leaderboard')}
+          onViewMonthlyPoints={() => setCurrentView('monthly-points')}
           onViewReport={(reportId) => {
             setSelectedReportId(reportId);
             setCurrentView('employee-report-detail');

@@ -26,7 +26,8 @@ export function Leaderboard({ onBack }: { onBack: () => void }) {
     setIsLoading(true);
     try {
       const now = new Date();
-      const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
+      const currentYear = now.getFullYear();
+      const currentMonth = now.getMonth() + 1; // JS months are 0-11, DB uses 1-12
 
       const { data: profiles, error: profilesError } = await supabase
         .from('profiles')
@@ -35,20 +36,21 @@ export function Leaderboard({ onBack }: { onBack: () => void }) {
 
       if (profilesError) throw profilesError;
 
-      const { data: reports, error: reportsError } = await supabase
-        .from('safety_reports')
-        .select('employee_id, points_awarded')
-        .gte('created_at', monthStart);
+      // Load monthly points from the new table
+      const { data: monthlyPoints, error: monthlyPointsError } = await supabase
+        .from('monthly_employee_points')
+        .select('employee_id, total_points, report_count')
+        .eq('year', currentYear)
+        .eq('month', currentMonth);
 
-      if (reportsError) throw reportsError;
+      if (monthlyPointsError) throw monthlyPointsError;
 
       const employeeStats: Record<string, { count: number; points: number }> = {};
-      (reports || []).forEach((r) => {
-        if (!employeeStats[r.employee_id]) {
-          employeeStats[r.employee_id] = { count: 0, points: 0 };
-        }
-        employeeStats[r.employee_id].count++;
-        employeeStats[r.employee_id].points += r.points_awarded || 0;
+      (monthlyPoints || []).forEach((mp) => {
+        employeeStats[mp.employee_id] = {
+          count: mp.report_count || 0,
+          points: mp.total_points || 0,
+        };
       });
 
       const leaderboardData: LeaderboardEntry[] = (profiles || []).map((p) => ({
