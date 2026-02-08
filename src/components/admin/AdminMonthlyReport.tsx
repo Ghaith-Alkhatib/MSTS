@@ -99,8 +99,8 @@ export function AdminMonthlyReport({ onViewReport }: { onViewReport: (report: Sa
     [monthlyData]
   );
 
-  const handleExportMonth = (md: MonthData) => {
-    exportReportsCsv(md.reports, `بلاغات_${md.label}.csv`);
+  const handleExportMonth = async (md: MonthData) => {
+    await exportReportsCsv(md.reports, `بلاغات_${md.label}.csv`);
   };
 
   const handleExportAll = () => {
@@ -154,7 +154,7 @@ export function AdminMonthlyReport({ onViewReport }: { onViewReport: (report: Sa
             <p className="text-gray-500 mt-1">{detailReports.length} بلاغ</p>
           </div>
           <button
-            onClick={() => exportReportsCsv(detailReports, `بلاغات_${md?.label}_${filterLabel}.csv`)}
+            onClick={async () => await exportReportsCsv(detailReports, `بلاغات_${md?.label}_${filterLabel}.csv`)}
             className="flex items-center gap-2 px-4 py-2 bg-teal-600 text-white rounded-lg text-sm hover:bg-teal-700 transition-colors"
           >
             <Download className="w-4 h-4" />

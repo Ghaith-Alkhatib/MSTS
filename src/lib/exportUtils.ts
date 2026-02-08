@@ -1,4 +1,5 @@
 import { STATUS_LABELS, TYPE_LABELS } from './adminHelpers';
+import { supabase } from './supabase';
 
 interface ReportRow {
   report_number: string;
@@ -35,24 +36,53 @@ function downloadCsv(content: string, filename: string) {
   URL.revokeObjectURL(url);
 }
 
-export function exportReportsCsv(reports: ReportRow[], filename?: string) {
+export async function exportReportsCsv(reports: ReportRow[], filename?: string) {
+  const employeeIds = [...new Set(reports.map(r => r.employee?.email).filter(Boolean))];
+  const { data: profilesData } = await supabase
+    .from('profiles')
+    .select('id, email')
+    .in('email', employeeIds);
+
+  const employeeIdMap = new Map<string, string>();
+  profilesData?.forEach(p => {
+    employeeIdMap.set(p.email, p.id);
+  });
+
+  const employeeIdsArray = Array.from(new Set(Array.from(employeeIdMap.values())));
+  const { data: pointsData } = await supabase
+    .from('monthly_employee_points')
+    .select('employee_id, total_points')
+    .in('employee_id', employeeIdsArray);
+
+  const pointsMap = new Map<string, number>();
+  pointsData?.forEach((p) => {
+    const current = pointsMap.get(p.employee_id) || 0;
+    pointsMap.set(p.employee_id, current + (p.total_points || 0));
+  });
+
   const headers = [
     'رقم البلاغ', 'النوع', 'الوصف', 'الموقع', 'الحالة',
-    'اسم الموظف', 'البريد الإلكتروني', 'القسم', 'النقاط', 'تاريخ الإنشاء',
+    'اسم الموظف', 'البريد الإلكتروني', 'القسم', 'نقاط البلاغ', 'إجمالي نقاط الموظف', 'تاريخ الإنشاء',
   ];
 
-  const rows = reports.map((r) => [
-    r.report_number,
-    TYPE_LABELS[r.report_type] || r.report_type,
-    r.description,
-    r.location || '-',
-    STATUS_LABELS[r.status] || r.status,
-    r.employee?.full_name || '-',
-    r.employee?.email || '-',
-    r.employee?.department || '-',
-    String(r.points_awarded),
-    new Date(r.created_at).toLocaleDateString('ar-SA'),
-  ]);
+  const rows = reports.map((r) => {
+    const employeeId = r.employee?.email ? employeeIdMap.get(r.employee.email) : null;
+    const totalPoints = employeeId ? (pointsMap.get(employeeId) || 0) : 0;
+
+    return [
+      r.report_number,
+      TYPE_LABELS[r.report_type] || r.report_type,
+      r.description,
+      r.location || '-',
+      STATUS_LABELS[r.status] || r.status,
+      r.employee?.full_name || '-',
+      r.employee?.email || '-',
+      r.employee?.department || '-',
+      String(r.points_awarded),
+      String(totalPoints),
+      new Date(r.created_at).toLocaleDateString('ar-SA'),
+    ];
+  });
 
   const csv = buildCsv(headers, rows);
   const now = new Date();

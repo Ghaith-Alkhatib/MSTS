@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Bell, Check } from 'lucide-react';
+import { Bell } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/AuthContext';
 import { Notification } from '../../types';
@@ -113,10 +113,17 @@ export function NotificationBell({ onNavigateToReport }: { onNavigateToReport?: 
     return `منذ ${Math.floor(diffInMinutes / 1440)} يوم`;
   };
 
+  const handleBellClick = () => {
+    if (!showDropdown && unreadCount > 0) {
+      markAllAsRead();
+    }
+    setShowDropdown(!showDropdown);
+  };
+
   return (
     <div className="relative">
       <button
-        onClick={() => setShowDropdown(!showDropdown)}
+        onClick={handleBellClick}
         className="relative p-2 hover:bg-gray-100 rounded-lg transition-colors"
       >
         <Bell className="w-6 h-6 text-gray-600" />
@@ -136,15 +143,6 @@ export function NotificationBell({ onNavigateToReport }: { onNavigateToReport?: 
           <div className="absolute left-0 mt-2 w-80 bg-white rounded-xl shadow-lg border border-gray-200 z-20 max-h-96 overflow-hidden flex flex-col" dir="rtl">
             <div className="flex items-center justify-between p-4 border-b border-gray-200">
               <h3 className="text-lg font-semibold text-gray-900">الإشعارات</h3>
-              {unreadCount > 0 && (
-                <button
-                  onClick={markAllAsRead}
-                  className="text-sm text-blue-600 hover:text-blue-700 flex items-center gap-1"
-                >
-                  <Check className="w-4 h-4" />
-                  قراءة الكل
-                </button>
-              )}
             </div>
 
             <div className="overflow-y-auto flex-1">

@@ -161,8 +161,8 @@ export function AdminEmployeeStats({ onViewReport }: { onViewReport: (report: Sa
     );
   };
 
-  const handleExportEmployeeReports = (emp: EmployeeData) => {
-    exportReportsCsv(
+  const handleExportEmployeeReports = async (emp: EmployeeData) => {
+    await exportReportsCsv(
       emp.reports.map((r) => ({
         ...r,
         employee: {

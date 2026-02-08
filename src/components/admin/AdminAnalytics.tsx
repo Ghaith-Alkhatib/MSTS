@@ -99,7 +99,7 @@ export function AdminAnalytics({ onViewReport }: { onViewReport: (report: Safety
     return { total: reports.length, thisMonth: thisMonth.length, growth, byType, byStatus, resolutionRate, topEmployees, totalEmployees };
   }, [yearReports, reports]);
 
-  const handleExportAll = () => exportReportsCsv(yearReports, `تقرير_${selectedYear}.csv`);
+  const handleExportAll = async () => await exportReportsCsv(yearReports, `تقرير_${selectedYear}.csv`);
   const handleExportMonthly = () => {
     exportMonthlyCsv(monthlyData.map((m) => ({
       month: m.label + ' ' + selectedYear, total: m.total, byType: m.byType, byStatus: {},

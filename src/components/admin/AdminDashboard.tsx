@@ -249,7 +249,7 @@ export function AdminDashboard({ onViewReport, onNavigateToReport }: {
                       البلاغات ({filteredReports.length})
                     </h2>
                     <button
-                      onClick={() => exportReportsCsv(filteredReports.map((r) => ({ ...r, employee: { full_name: r.employee.full_name, email: r.employee.email, department: r.employee.department } })))}
+                      onClick={async () => await exportReportsCsv(filteredReports.map((r) => ({ ...r, employee: { full_name: r.employee.full_name, email: r.employee.email, department: r.employee.department } })))}
                       className="flex items-center gap-2 px-4 py-2 bg-teal-600 text-white rounded-lg text-sm hover:bg-teal-700 transition-colors whitespace-nowrap"
                     >
                       <Download className="w-4 h-4" />
