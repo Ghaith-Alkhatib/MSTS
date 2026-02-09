@@ -74,6 +74,7 @@ export function ReportDetail({ report, onBack, onUpdate }: {
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [responseImages, setResponseImages] = useState<File[]>([]);
   const [, setUploadingImages] = useState(false);
+  const [selectedResolvers, setSelectedResolvers] = useState<string[]>([]);
 
   useEffect(() => {
     loadReportDetails();
@@ -97,12 +98,24 @@ export function ReportDetail({ report, onBack, onUpdate }: {
       const details = data as ReportWithDetails;
       setReportDetails(details);
       setPointsToAward(details.points_awarded || 0);
-      if (details.resolved_by_id) {
-        if (details.resolved_by_id === details.employee_id) {
-          setResolverType('reporter');
-        } else {
-          setResolverType('other');
-          setSelectedResolverId(details.resolved_by_id);
+
+      // جلب الموظفين الذين أغلقوا البلاغ
+      if (details.status === 'closed') {
+        const { data: resolvers } = await supabase
+          .from('report_resolvers')
+          .select('resolver_id')
+          .eq('report_id', details.id);
+
+        if (resolvers) {
+          const resolverIds = resolvers.map(r => r.resolver_id);
+          setSelectedResolvers(resolverIds);
+
+          if (resolverIds.length === 1 && resolverIds[0] === details.employee_id) {
+            setResolverType('reporter');
+          } else if (resolverIds.length > 0) {
+            setResolverType('other');
+            setSelectedResolverId(resolverIds[0]);
+          }
         }
       }
     } catch (error) {
@@ -135,32 +148,35 @@ export function ReportDetail({ report, onBack, onUpdate }: {
       };
 
       if (newStatus === 'closed') {
-        let resolverId: string;
-        let resolverName: string;
+        const resolversToAdd: string[] = [];
 
         if (resolverType === 'reporter') {
-          resolverId = reportDetails.employee_id;
-          resolverName = reportDetails.employee.full_name;
+          resolversToAdd.push(reportDetails.employee_id);
+          updateData.resolved_by_id = reportDetails.employee_id;
+          updateData.resolved_by_name = reportDetails.employee.full_name;
         } else {
-          resolverId = selectedResolverId;
-          const resolver = employees.find(e => e.id === selectedResolverId);
-          resolverName = resolver?.full_name || '';
+          if (!selectedResolverId) {
+            alert('يرجى تحديد الموظف الذي حل المشكلة');
+            return;
+          }
+
+          const selectedEmployees = selectedResolvers.length > 0 ? selectedResolvers : [selectedResolverId];
+          resolversToAdd.push(...selectedEmployees);
+
+          if (selectedEmployees.length > 0) {
+            const firstResolver = employees.find(e => e.id === selectedEmployees[0]);
+            updateData.resolved_by_id = selectedEmployees[0];
+            updateData.resolved_by_name = firstResolver?.full_name || '';
+          }
         }
 
-        if (!resolverId) {
-          alert('يرجى تحديد الشخص الذي حل المشكلة');
-          return;
+        // إضافة الموظفين إلى جدول report_resolvers
+        for (const resolverId of resolversToAdd) {
+          await supabase.from('report_resolvers').insert({
+            report_id: report.id,
+            resolver_id: resolverId,
+          });
         }
-
-        updateData.resolved_by_id = resolverId;
-        updateData.resolved_by_name = resolverName;
-
-        const bonusPoints = resolverType === 'reporter' ? 1 : 2;
-
-        await supabase.rpc('increment', {
-          row_id: resolverId,
-          x: bonusPoints,
-        });
       }
 
       if (pointsToAward > 0 && pointsToAward !== reportDetails.points_awarded) {
@@ -370,21 +386,41 @@ export function ReportDetail({ report, onBack, onUpdate }: {
             </div>
           )}
 
-          {isClosed && reportDetails.resolved_by_name && (
+          {isClosed && (
             <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-              <div className="flex items-center gap-2 text-green-800 mb-1">
+              <div className="flex items-center gap-2 text-green-800 mb-3">
                 <UserCheck className="w-5 h-5" />
                 <h3 className="font-semibold">تم حل المشكلة بواسطة</h3>
               </div>
-              <p className="text-green-700">{reportDetails.resolved_by_name}</p>
-              {reportDetails.points_awarded > 0 && (
-                <p className="text-green-600 text-sm mt-1">
-                  النقاط الممنوحة: {reportDetails.points_awarded}
-                  {reportDetails.resolved_by_id === reportDetails.employee_id
-                    ? ' (+1 نقطة إضافية لحل المشكلة)'
-                    : ` (+2 نقطة إضافية لـ ${reportDetails.resolved_by_name})`
-                  }
-                </p>
+              {selectedResolvers.length > 0 ? (
+                <div className="space-y-2">
+                  {selectedResolvers.map(resolverId => {
+                    const resolver = employees.find(e => e.id === resolverId);
+                    const isReporter = resolverId === reportDetails.employee_id;
+                    const bonusPoints = isReporter ? 1 : 2;
+                    return (
+                      <div key={resolverId} className="text-green-700">
+                        <p className="font-medium">{resolver?.full_name}</p>
+                        <p className="text-sm text-green-600">
+                          +{bonusPoints} نقاط إضافية {isReporter ? '(حل البلاغ الخاص به)' : '(حل بلاغ آخر)'}
+                        </p>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : reportDetails.resolved_by_name && (
+                <>
+                  <p className="text-green-700">{reportDetails.resolved_by_name}</p>
+                  {reportDetails.points_awarded > 0 && (
+                    <p className="text-green-600 text-sm mt-1">
+                      النقاط الممنوحة: {reportDetails.points_awarded}
+                      {reportDetails.resolved_by_id === reportDetails.employee_id
+                        ? ' (+1 نقطة إضافية لحل المشكلة)'
+                        : ` (+2 نقطة إضافية لـ ${reportDetails.resolved_by_name})`
+                      }
+                    </p>
+                  )}
+                </>
               )}
             </div>
           )}
@@ -448,7 +484,7 @@ export function ReportDetail({ report, onBack, onUpdate }: {
                   <div className="flex gap-3">
                     <button
                       type="button"
-                      onClick={() => setResolverType('reporter')}
+                      onClick={() => { setResolverType('reporter'); setSelectedResolvers([reportDetails.employee_id]); }}
                       className={`flex-1 py-3 rounded-lg border-2 text-sm font-medium transition-all ${
                         resolverType === 'reporter'
                           ? 'border-blue-500 bg-white text-blue-700'
@@ -467,28 +503,59 @@ export function ReportDetail({ report, onBack, onUpdate }: {
                           : 'border-gray-200 bg-white text-gray-500 hover:border-gray-300'
                       }`}
                     >
-                      شخص آخر
-                      <span className="block text-xs mt-1 text-gray-400">+2 نقاط إضافية للشخص</span>
+                      موظفون آخرون
+                      <span className="block text-xs mt-1 text-gray-400">+2 نقاط لكل موظف</span>
                     </button>
                   </div>
 
                   {resolverType === 'other' && (
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">اختر الموظف</label>
-                      <select
-                        value={selectedResolverId}
-                        onChange={(e) => setSelectedResolverId(e.target.value)}
-                        className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                      >
-                        <option value="">-- اختر الموظف --</option>
+                    <div className="space-y-3">
+                      <label className="block text-sm font-medium text-gray-700">اختر الموظفين (يمكن اختيار أكثر من واحد)</label>
+                      <div className="space-y-2 max-h-60 overflow-y-auto border border-gray-300 rounded-lg p-3 bg-white">
                         {employees
                           .filter(e => e.id !== reportDetails.employee_id)
                           .map((emp) => (
-                            <option key={emp.id} value={emp.id}>
-                              {emp.full_name} {emp.department ? `(${emp.department})` : ''}
-                            </option>
+                            <label key={emp.id} className="flex items-center gap-3 p-2 hover:bg-gray-100 rounded transition-colors cursor-pointer">
+                              <input
+                                type="checkbox"
+                                checked={selectedResolvers.includes(emp.id)}
+                                onChange={(e) => {
+                                  if (e.target.checked) {
+                                    setSelectedResolvers([...selectedResolvers, emp.id]);
+                                    setSelectedResolverId(emp.id);
+                                  } else {
+                                    setSelectedResolvers(selectedResolvers.filter(id => id !== emp.id));
+                                  }
+                                }}
+                                className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
+                              />
+                              <span className="text-gray-700">{emp.full_name}</span>
+                              {emp.department && <span className="text-xs text-gray-500">({emp.department})</span>}
+                            </label>
                           ))}
-                      </select>
+                      </div>
+                      {selectedResolvers.length > 0 && (
+                        <div className="bg-white p-3 rounded-lg border border-blue-200">
+                          <p className="text-sm font-medium text-gray-700 mb-2">الموظفون المختارون ({selectedResolvers.length}):</p>
+                          <div className="flex flex-wrap gap-2">
+                            {selectedResolvers.map(id => {
+                              const emp = employees.find(e => e.id === id);
+                              return (
+                                <span key={id} className="bg-blue-100 text-blue-700 px-3 py-1 rounded-full text-sm flex items-center gap-2">
+                                  {emp?.full_name}
+                                  <button
+                                    type="button"
+                                    onClick={() => setSelectedResolvers(selectedResolvers.filter(rid => rid !== id))}
+                                    className="text-blue-500 hover:text-blue-700 font-bold"
+                                  >
+                                    ×
+                                  </button>
+                                </span>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
