@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react';
-import { ArrowLeft, MapPin, Clock, Send, Loader2, ImageIcon, User, Calendar, Upload, X, Star, UserCheck } from 'lucide-react';
+import { ArrowLeft, MapPin, Clock, Send, Loader2, ImageIcon, User, Calendar, Upload, X, Star, UserCheck, Download, Check } from 'lucide-react';
 import { SafetyReport } from '../../types';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/AuthContext';
+import { exportReportToPdf } from '../../lib/pdfExport';
 
 interface ReportImage {
   id: string;
@@ -33,6 +34,15 @@ interface EmployeeOption {
   department: string | null;
 }
 
+interface ReportResolver {
+  id: string;
+  resolver_id: string;
+  points_awarded: number;
+  resolver: {
+    full_name: string;
+  };
+}
+
 interface ReportWithDetails {
   id: string;
   report_number: string;
@@ -53,6 +63,7 @@ interface ReportWithDetails {
   };
   report_images: ReportImage[];
   report_responses: Response[];
+  report_resolvers?: ReportResolver[];
 }
 
 export function ReportDetail({ report, onBack, onUpdate }: {
@@ -65,8 +76,7 @@ export function ReportDetail({ report, onBack, onUpdate }: {
   const [isLoading, setIsLoading] = useState(true);
   const [newStatus, setNewStatus] = useState<string>(report.status);
   const [pointsToAward, setPointsToAward] = useState<number>(0);
-  const [resolverType, setResolverType] = useState<'reporter' | 'other'>('reporter');
-  const [selectedResolverId, setSelectedResolverId] = useState<string>('');
+  const [selectedResolvers, setSelectedResolvers] = useState<string[]>([]);
   const [employees, setEmployees] = useState<EmployeeOption[]>([]);
   const [responseText, setResponseText] = useState('');
   const [correctiveAction, setCorrectiveAction] = useState('');
@@ -88,7 +98,8 @@ export function ReportDetail({ report, onBack, onUpdate }: {
           *,
           employee:profiles!safety_reports_employee_id_fkey(full_name, email, department),
           report_images(*),
-          report_responses(*, admin:profiles!report_responses_admin_id_fkey(full_name), response_images(*))
+          report_responses(*, admin:profiles!report_responses_admin_id_fkey(full_name), response_images(*)),
+          report_resolvers(*, resolver:profiles!report_resolvers_resolver_id_fkey(full_name))
         `)
         .eq('id', report.id)
         .single();
@@ -97,13 +108,9 @@ export function ReportDetail({ report, onBack, onUpdate }: {
       const details = data as ReportWithDetails;
       setReportDetails(details);
       setPointsToAward(details.points_awarded || 0);
-      if (details.resolved_by_id) {
-        if (details.resolved_by_id === details.employee_id) {
-          setResolverType('reporter');
-        } else {
-          setResolverType('other');
-          setSelectedResolverId(details.resolved_by_id);
-        }
+
+      if (details.report_resolvers && details.report_resolvers.length > 0) {
+        setSelectedResolvers(details.report_resolvers.map(r => r.resolver_id));
       }
     } catch (error) {
       console.error('Error loading report details:', error);
@@ -135,32 +142,40 @@ export function ReportDetail({ report, onBack, onUpdate }: {
       };
 
       if (newStatus === 'closed') {
-        let resolverId: string;
-        let resolverName: string;
-
-        if (resolverType === 'reporter') {
-          resolverId = reportDetails.employee_id;
-          resolverName = reportDetails.employee.full_name;
-        } else {
-          resolverId = selectedResolverId;
-          const resolver = employees.find(e => e.id === selectedResolverId);
-          resolverName = resolver?.full_name || '';
-        }
-
-        if (!resolverId) {
-          alert('يرجى تحديد الشخص الذي حل المشكلة');
+        if (selectedResolvers.length === 0) {
+          alert('يرجى تحديد الأشخاص الذين أغلقوا البلاغ');
           return;
         }
 
-        updateData.resolved_by_id = resolverId;
-        updateData.resolved_by_name = resolverName;
+        const existingResolverIds = reportDetails.report_resolvers?.map(r => r.resolver_id) || [];
+        const resolversToAdd = selectedResolvers.filter(id => !existingResolverIds.includes(id));
+        const resolversToRemove = existingResolverIds.filter(id => !selectedResolvers.includes(id));
 
-        const bonusPoints = resolverType === 'reporter' ? 1 : 2;
+        for (const resolverId of resolversToAdd) {
+          const bonusPoints = resolverId === reportDetails.employee_id ? 1 : 2;
 
-        await supabase.rpc('increment', {
-          row_id: resolverId,
-          x: bonusPoints,
-        });
+          await supabase.from('report_resolvers').insert({
+            report_id: report.id,
+            resolver_id: resolverId,
+            points_awarded: bonusPoints,
+          });
+
+          await supabase.rpc('increment', {
+            row_id: resolverId,
+            x: bonusPoints,
+          });
+        }
+
+        for (const resolverId of resolversToRemove) {
+          const resolverRecord = reportDetails.report_resolvers?.find(r => r.resolver_id === resolverId);
+          if (resolverRecord) {
+            await supabase.rpc('increment', {
+              row_id: resolverId,
+              x: -resolverRecord.points_awarded,
+            });
+            await supabase.from('report_resolvers').delete().eq('id', resolverRecord.id);
+          }
+        }
       }
 
       if (pointsToAward > 0 && pointsToAward !== reportDetails.points_awarded) {
@@ -179,6 +194,7 @@ export function ReportDetail({ report, onBack, onUpdate }: {
         .eq('id', report.id);
 
       if (error) throw error;
+      await loadReportDetails();
       onUpdate();
     } catch (error) {
       console.error('Error updating status:', error);
@@ -288,6 +304,38 @@ export function ReportDetail({ report, onBack, onUpdate }: {
 
   const isClosed = reportDetails.status === 'closed';
 
+  const handleDownloadPdf = () => {
+    if (!reportDetails) return;
+
+    const reportForPdf = {
+      report_number: reportDetails.report_number,
+      report_type: reportDetails.report_type,
+      description: reportDetails.description,
+      location: reportDetails.location,
+      status: reportDetails.status,
+      points_awarded: reportDetails.points_awarded,
+      created_at: reportDetails.created_at,
+      updated_at: reportDetails.updated_at,
+      employee: reportDetails.employee,
+      report_images: reportDetails.report_images,
+      report_responses: reportDetails.report_responses,
+      resolvers: reportDetails.report_resolvers?.map(r => ({
+        full_name: r.resolver.full_name,
+        points_awarded: r.points_awarded,
+      })),
+    };
+
+    exportReportToPdf(reportForPdf);
+  };
+
+  const toggleResolver = (resolverId: string) => {
+    setSelectedResolvers(prev =>
+      prev.includes(resolverId)
+        ? prev.filter(id => id !== resolverId)
+        : [...prev, resolverId]
+    );
+  };
+
   return (
     <div className="min-h-screen bg-gray-50" dir="rtl">
       <header className="bg-white shadow-sm sticky top-0 z-10">
@@ -308,6 +356,14 @@ export function ReportDetail({ report, onBack, onUpdate }: {
               <h1 className="text-2xl font-bold text-gray-900">تفاصيل البلاغ</h1>
               <p className="text-sm text-gray-600 font-mono">{reportDetails.report_number}</p>
             </div>
+            <button
+              onClick={handleDownloadPdf}
+              className="flex items-center gap-2 px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700 transition-colors"
+              title="تنزيل PDF"
+            >
+              <Download className="w-5 h-5" />
+              <span className="hidden sm:inline">PDF</span>
+            </button>
           </div>
         </div>
       </header>
@@ -370,20 +426,25 @@ export function ReportDetail({ report, onBack, onUpdate }: {
             </div>
           )}
 
-          {isClosed && reportDetails.resolved_by_name && (
+          {isClosed && reportDetails.report_resolvers && reportDetails.report_resolvers.length > 0 && (
             <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-              <div className="flex items-center gap-2 text-green-800 mb-1">
+              <div className="flex items-center gap-2 text-green-800 mb-3">
                 <UserCheck className="w-5 h-5" />
-                <h3 className="font-semibold">تم حل المشكلة بواسطة</h3>
+                <h3 className="font-semibold">الموظفون الذين أغلقوا البلاغ</h3>
               </div>
-              <p className="text-green-700">{reportDetails.resolved_by_name}</p>
+              <div className="space-y-2">
+                {reportDetails.report_resolvers.map((resolver) => (
+                  <div key={resolver.id} className="flex items-center justify-between bg-white p-3 rounded-lg">
+                    <span className="text-green-700 font-medium">{resolver.resolver.full_name}</span>
+                    <span className="text-green-600 text-sm bg-green-100 px-3 py-1 rounded-full">
+                      +{resolver.points_awarded} نقطة
+                    </span>
+                  </div>
+                ))}
+              </div>
               {reportDetails.points_awarded > 0 && (
-                <p className="text-green-600 text-sm mt-1">
-                  النقاط الممنوحة: {reportDetails.points_awarded}
-                  {reportDetails.resolved_by_id === reportDetails.employee_id
-                    ? ' (+1 نقطة إضافية لحل المشكلة)'
-                    : ` (+2 نقطة إضافية لـ ${reportDetails.resolved_by_name})`
-                  }
+                <p className="text-green-600 text-sm mt-3">
+                  النقاط الممنوحة للتقرير: {reportDetails.points_awarded}
                 </p>
               )}
             </div>
@@ -442,53 +503,58 @@ export function ReportDetail({ report, onBack, onUpdate }: {
                 <div className="bg-blue-50 border border-blue-200 rounded-lg p-5 space-y-4">
                   <h3 className="font-semibold text-blue-900 flex items-center gap-2">
                     <UserCheck className="w-5 h-5" />
-                    من حل هذه المشكلة؟
+                    من أغلق هذه المشكلة؟ (يمكن اختيار أكثر من موظف)
                   </h3>
 
-                  <div className="flex gap-3">
-                    <button
-                      type="button"
-                      onClick={() => setResolverType('reporter')}
-                      className={`flex-1 py-3 rounded-lg border-2 text-sm font-medium transition-all ${
-                        resolverType === 'reporter'
-                          ? 'border-blue-500 bg-white text-blue-700'
-                          : 'border-gray-200 bg-white text-gray-500 hover:border-gray-300'
-                      }`}
-                    >
-                      مقدم البلاغ ({reportDetails.employee.full_name})
-                      <span className="block text-xs mt-1 text-gray-400">+1 نقطة إضافية</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setResolverType('other')}
-                      className={`flex-1 py-3 rounded-lg border-2 text-sm font-medium transition-all ${
-                        resolverType === 'other'
-                          ? 'border-blue-500 bg-white text-blue-700'
-                          : 'border-gray-200 bg-white text-gray-500 hover:border-gray-300'
-                      }`}
-                    >
-                      شخص آخر
-                      <span className="block text-xs mt-1 text-gray-400">+2 نقاط إضافية للشخص</span>
-                    </button>
+                  <div className="space-y-2 max-h-64 overflow-y-auto">
+                    {[reportDetails.employee, ...employees.filter(e => e.id !== reportDetails.employee_id)]
+                      .map((emp) => {
+                        const isReporter = emp.id === reportDetails.employee_id;
+                        const isSelected = selectedResolvers.includes(emp.id);
+                        const bonusPoints = isReporter ? 1 : 2;
+
+                        return (
+                          <button
+                            key={emp.id}
+                            type="button"
+                            onClick={() => toggleResolver(emp.id)}
+                            className={`w-full flex items-center justify-between p-4 rounded-lg border-2 transition-all ${
+                              isSelected
+                                ? 'border-blue-500 bg-white shadow-md'
+                                : 'border-gray-200 bg-white hover:border-gray-300'
+                            }`}
+                          >
+                            <div className="flex items-center gap-3">
+                              <div className={`w-5 h-5 rounded border-2 flex items-center justify-center ${
+                                isSelected ? 'bg-blue-500 border-blue-500' : 'border-gray-300'
+                              }`}>
+                                {isSelected && <Check className="w-3 h-3 text-white" />}
+                              </div>
+                              <div className="text-right">
+                                <div className="font-medium text-gray-900">
+                                  {emp.full_name}
+                                  {isReporter && (
+                                    <span className="text-xs text-blue-600 mr-2">(مقدم البلاغ)</span>
+                                  )}
+                                </div>
+                                {emp.department && (
+                                  <div className="text-xs text-gray-500">{emp.department}</div>
+                                )}
+                              </div>
+                            </div>
+                            <span className="text-sm font-medium text-blue-600">
+                              +{bonusPoints} نقطة
+                            </span>
+                          </button>
+                        );
+                      })}
                   </div>
 
-                  {resolverType === 'other' && (
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">اختر الموظف</label>
-                      <select
-                        value={selectedResolverId}
-                        onChange={(e) => setSelectedResolverId(e.target.value)}
-                        className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                      >
-                        <option value="">-- اختر الموظف --</option>
-                        {employees
-                          .filter(e => e.id !== reportDetails.employee_id)
-                          .map((emp) => (
-                            <option key={emp.id} value={emp.id}>
-                              {emp.full_name} {emp.department ? `(${emp.department})` : ''}
-                            </option>
-                          ))}
-                      </select>
+                  {selectedResolvers.length > 0 && (
+                    <div className="bg-white p-3 rounded-lg border border-blue-300">
+                      <p className="text-sm text-blue-900">
+                        عدد الموظفين المحددين: <span className="font-bold">{selectedResolvers.length}</span>
+                      </p>
                     </div>
                   )}
                 </div>
@@ -496,7 +562,7 @@ export function ReportDetail({ report, onBack, onUpdate }: {
 
               <button
                 onClick={handleUpdateStatus}
-                disabled={newStatus === 'closed' && resolverType === 'other' && !selectedResolverId}
+                disabled={newStatus === 'closed' && selectedResolvers.length === 0}
                 className="w-full px-6 py-3 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed"
               >
                 تحديث البلاغ
