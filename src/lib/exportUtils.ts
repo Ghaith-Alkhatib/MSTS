@@ -62,7 +62,7 @@ export async function exportReportsCsv(reports: ReportRow[], filename?: string) 
 
   const headers = [
     'رقم البلاغ', 'النوع', 'الوصف', 'الموقع', 'الحالة',
-    'اسم الموظف', 'البريد الإلكتروني', 'القسم', 'النقاط الكلية', 'تاريخ الإنشاء',
+    'اسم الموظف', 'البريد الإلكتروني', 'القسم', 'نقاط البلاغ', 'إجمالي نقاط الموظف', 'تاريخ الإنشاء',
   ];
 
   const rows = reports.map((r) => {
@@ -78,6 +78,7 @@ export async function exportReportsCsv(reports: ReportRow[], filename?: string) 
       r.employee?.full_name || '-',
       r.employee?.email || '-',
       r.employee?.department || '-',
+      String(r.points_awarded),
       String(totalPoints),
       new Date(r.created_at).toLocaleDateString('ar-SA'),
     ];

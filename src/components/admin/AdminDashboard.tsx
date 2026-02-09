@@ -10,7 +10,6 @@ import { NotificationBell } from '../shared/NotificationBell';
 import { AdminAnalytics } from './AdminAnalytics';
 import { AdminEmployeeStats } from './AdminEmployeeStats';
 import { AdminMonthlyReport } from './AdminMonthlyReport';
-import { AdminPdfExport } from './AdminPdfExport';
 import {
   STATUS_LABELS, STATUS_COLORS, TYPE_LABELS, TYPE_COLORS, MONTH_NAMES_AR,
 } from '../../lib/adminHelpers';
@@ -53,7 +52,6 @@ export function AdminDashboard({ onViewReport, onNavigateToReport }: {
   const [showPendingPopup, setShowPendingPopup] = useState(false);
   const [showInProgressPopup, setShowInProgressPopup] = useState(false);
   const [deletingReportId, setDeletingReportId] = useState<string | null>(null);
-  const [showPdfExport, setShowPdfExport] = useState(false);
 
   useEffect(() => {
     if (activeTab === 'reports') {
@@ -250,22 +248,13 @@ export function AdminDashboard({ onViewReport, onNavigateToReport }: {
                       <Filter className="w-6 h-6" />
                       البلاغات ({filteredReports.length})
                     </h2>
-                    <div className="flex gap-2">
-                      <button
-                        onClick={() => setShowPdfExport(true)}
-                        className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-lg text-sm hover:bg-red-700 transition-colors whitespace-nowrap"
-                      >
-                        <FileText className="w-4 h-4" />
-                        تصدير PDF
-                      </button>
-                      <button
-                        onClick={async () => await exportReportsCsv(filteredReports.map((r) => ({ ...r, employee: { full_name: r.employee.full_name, email: r.employee.email, department: r.employee.department } })))}
-                        className="flex items-center gap-2 px-4 py-2 bg-teal-600 text-white rounded-lg text-sm hover:bg-teal-700 transition-colors whitespace-nowrap"
-                      >
-                        <Download className="w-4 h-4" />
-                        تصدير Excel
-                      </button>
-                    </div>
+                    <button
+                      onClick={async () => await exportReportsCsv(filteredReports.map((r) => ({ ...r, employee: { full_name: r.employee.full_name, email: r.employee.email, department: r.employee.department } })))}
+                      className="flex items-center gap-2 px-4 py-2 bg-teal-600 text-white rounded-lg text-sm hover:bg-teal-700 transition-colors whitespace-nowrap"
+                    >
+                      <Download className="w-4 h-4" />
+                      تصدير
+                    </button>
                   </div>
 
                   <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 mb-6">
@@ -385,12 +374,6 @@ function ReportListPopup({ title, reports, onClose, onViewReport, getStatusIcon 
           ))}
         </div>
       </div>
-
-      <AdminPdfExport
-        isOpen={showPdfExport}
-        onClose={() => setShowPdfExport(false)}
-        reports={reports}
-      />
     </div>
   );
 }
